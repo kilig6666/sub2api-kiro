@@ -50,6 +50,15 @@ describe('useModelWhitelist', () => {
     expect(models.indexOf('gemini-2.5-flash-image')).toBeLessThan(models.indexOf('gemini-2.5-flash-lite'))
   })
 
+  it('kiro 模型列表不暴露旧的 -agentic / -chat 后缀', () => {
+    const models = getModelsByPlatform('kiro')
+
+    expect(models).toContain('claude-sonnet-4-6')
+    expect(models).toContain('claude-sonnet-4-6-thinking')
+    expect(models).not.toContain('claude-sonnet-4-6-chat')
+    expect(models.every((model) => !model.endsWith('-agentic') && !model.endsWith('-chat'))).toBe(true)
+  })
+
   it('whitelist 模式会忽略通配符条目', () => {
     const mapping = buildModelMappingObject('whitelist', ['claude-*', 'gemini-3.1-flash-image'], [])
     expect(mapping).toEqual({
