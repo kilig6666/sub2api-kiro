@@ -111,7 +111,8 @@ func TestIsKiroInvalidModelIDBodyRecognizesKnownForms(t *testing.T) {
 	}
 
 	for _, body := range tests {
-		require.True(t, isKiroInvalidModelIDBody([]byte(body)), body)
+		classification := classifyKiroHTTPError(http.StatusBadRequest, body)
+		require.Equal(t, kiroErrorBadRequestInvalidModel, classification.Category, body)
 	}
 }
 
@@ -131,8 +132,9 @@ func TestBuildKiroPayloadForAccountPropagatesThinkingHeaders(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Anthropic-Beta", "interleaved-thinking-2025-05-14")
 
-	payload, err := buildKiroPayloadForAccount(
+	buildResult, err := buildKiroPayloadForAccountWithRepo(
 		context.Background(),
+		nil,
 		account,
 		body,
 		"claude-sonnet-4.6",
@@ -141,6 +143,7 @@ func TestBuildKiroPayloadForAccountPropagatesThinkingHeaders(t *testing.T) {
 		headers,
 	)
 	require.NoError(t, err)
+	payload := buildResult.Payload
 	require.NotContains(t, string(payload), "CHUNKED WRITE PROTOCOL")
 	require.Contains(t, string(payload), "\\u003cthinking_mode\\u003eenabled\\u003c/thinking_mode\\u003e")
 }
@@ -156,8 +159,9 @@ func TestBuildKiroPayloadForAccountPreservesThinkingAliasAfterMapping(t *testing
 		"messages":[{"role":"user","content":"hello"}]
 	}`)
 
-	payload, err := buildKiroPayloadForAccount(
+	buildResult, err := buildKiroPayloadForAccountWithRepo(
 		context.Background(),
+		nil,
 		account,
 		body,
 		"claude-opus-4.6",
@@ -166,6 +170,7 @@ func TestBuildKiroPayloadForAccountPreservesThinkingAliasAfterMapping(t *testing
 		nil,
 	)
 	require.NoError(t, err)
+	payload := buildResult.Payload
 
 	require.Equal(t, "claude-opus-4.6", gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.modelId").String())
 	systemContent := gjson.GetBytes(payload, "conversationState.history.0.userInputMessage.content").String()
@@ -184,8 +189,9 @@ func TestBuildKiroPayloadForAccountDoesNotEnableThinkingForNonThinkingAlias(t *t
 		"messages":[{"role":"user","content":"hello"}]
 	}`)
 
-	payload, err := buildKiroPayloadForAccount(
+	buildResult, err := buildKiroPayloadForAccountWithRepo(
 		context.Background(),
+		nil,
 		account,
 		body,
 		"claude-opus-4.6",
@@ -194,6 +200,7 @@ func TestBuildKiroPayloadForAccountDoesNotEnableThinkingForNonThinkingAlias(t *t
 		nil,
 	)
 	require.NoError(t, err)
+	payload := buildResult.Payload
 
 	systemContent := gjson.GetBytes(payload, "conversationState.history.0.userInputMessage.content").String()
 	require.NotContains(t, systemContent, "<thinking_mode>")

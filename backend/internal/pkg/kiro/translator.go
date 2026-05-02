@@ -967,10 +967,6 @@ func extractSystemPrompt(claudeBody []byte) string {
 	return systemField.String()
 }
 
-func isThinkingEnabledWithHeaders(body []byte, headers http.Header) bool {
-	return deriveThinkingDirective(body, headers) != nil
-}
-
 func deriveThinkingDirective(body []byte, headers http.Header) *thinkingDirective {
 	if override := thinkingDirectiveFromModel(gjson.GetBytes(body, "model").String()); override != nil {
 		return override
@@ -1108,10 +1104,6 @@ func isToolChoiceNone(claudeBody []byte) bool {
 	return strings.EqualFold(strings.TrimSpace(toolChoice.Get("type").String()), "none")
 }
 
-func kiroToolNameAlias(name string) string {
-	return mapKiroToolName(name, nil)
-}
-
 func prependSystemHistory(history []KiroHistoryMessage, systemPrompt, modelID, origin string) []KiroHistoryMessage {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	if systemPrompt == "" {
@@ -1199,9 +1191,7 @@ func appendChunkedToolDescription(name, description string) string {
 	if suffix == "" {
 		return description
 	}
-	if strings.Contains(description, suffix) {
-		description = strings.Replace(description, suffix, "", 1)
-	}
+	description = strings.Replace(description, suffix, "", 1)
 	if strings.TrimSpace(description) == "" {
 		return suffix
 	}
@@ -2483,14 +2473,14 @@ func parseEmbeddedToolCalls(text string) (string, []KiroToolUse) {
 	for index < len(text) {
 		start := strings.Index(text[index:], embeddedToolCallPrefix)
 		if start == -1 {
-			builder.WriteString(text[index:])
+			_, _ = builder.WriteString(text[index:])
 			break
 		}
 		start += index
-		builder.WriteString(text[index:start])
+		_, _ = builder.WriteString(text[index:start])
 		tool, _, end, ok := parseEmbeddedToolCallAt(text, start)
 		if !ok {
-			builder.WriteString(text[start:])
+			_, _ = builder.WriteString(text[start:])
 			break
 		}
 		toolUses = append(toolUses, tool)

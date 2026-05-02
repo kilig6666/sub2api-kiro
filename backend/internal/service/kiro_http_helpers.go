@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -82,24 +81,6 @@ func buildKiroRequestID(resp *http.Response) string {
 		return requestID
 	}
 	return strings.TrimSpace(resp.Header.Get("x-amz-request-id"))
-}
-
-func isKiroInvalidModelIDBody(respBody []byte) bool {
-	var payload struct {
-		Reason  string `json:"reason"`
-		Message string `json:"message"`
-		Error   struct {
-			Reason  string `json:"reason"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if json.Unmarshal(respBody, &payload) != nil {
-		return looksLikeKiroBadRequestInvalidModelError(strings.ToLower(string(respBody)))
-	}
-	return strings.EqualFold(strings.TrimSpace(payload.Reason), "INVALID_MODEL_ID") ||
-		strings.EqualFold(strings.TrimSpace(payload.Error.Reason), "INVALID_MODEL_ID") ||
-		looksLikeKiroBadRequestInvalidModelError(strings.ToLower(payload.Message)) ||
-		looksLikeKiroBadRequestInvalidModelError(strings.ToLower(payload.Error.Message))
 }
 
 func isKiroSuspendedBody(respBody []byte) bool {

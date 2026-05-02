@@ -261,8 +261,9 @@ func TestBuildKiroPayloadForAccount_KiroBuilderIDWithoutProfileArnOmitsProfileAr
 	payloadBytes, err := json.Marshal(testPayload)
 	require.NoError(t, err)
 
-	kiroPayload, err := buildKiroPayloadForAccount(context.Background(), account, payloadBytes, "claude-sonnet-4-6", "kiro-access-token", "claude-sonnet-4-6", nil)
+	buildResult, err := buildKiroPayloadForAccountWithRepo(context.Background(), nil, account, payloadBytes, "claude-sonnet-4-6", "kiro-access-token", "claude-sonnet-4-6", nil)
 	require.NoError(t, err)
+	kiroPayload := buildResult.Payload
 	require.NotContains(t, string(kiroPayload), `"profileArn":`)
 }
 
@@ -286,8 +287,9 @@ func TestBuildKiroPayloadForAccount_KiroBuilderIDUsesCredentialProfileArn(t *tes
 	payloadBytes, err := json.Marshal(testPayload)
 	require.NoError(t, err)
 
-	kiroPayload, err := buildKiroPayloadForAccount(context.Background(), account, payloadBytes, "claude-sonnet-4-6", "kiro-access-token", "claude-sonnet-4-6", nil)
+	buildResult, err := buildKiroPayloadForAccountWithRepo(context.Background(), nil, account, payloadBytes, "claude-sonnet-4-6", "kiro-access-token", "claude-sonnet-4-6", nil)
 	require.NoError(t, err)
+	kiroPayload := buildResult.Payload
 	require.Contains(t, string(kiroPayload), `"profileArn":"arn:aws:codewhisperer:us-east-1:123456789012:profile/CACHED"`)
 }
 
@@ -311,7 +313,8 @@ func TestBuildKiroPayloadForAccount_KiroEnterpriseIDCOmitsMissingProfileArn(t *t
 	payloadBytes, err := json.Marshal(testPayload)
 	require.NoError(t, err)
 
-	kiroPayload, err := buildKiroPayloadForAccount(context.Background(), account, payloadBytes, "claude-sonnet-4-6", "kiro-access-token", "claude-sonnet-4-6", nil)
+	buildResult, err := buildKiroPayloadForAccountWithRepo(context.Background(), nil, account, payloadBytes, "claude-sonnet-4-6", "kiro-access-token", "claude-sonnet-4-6", nil)
 	require.NoError(t, err)
+	kiroPayload := buildResult.Payload
 	require.NotContains(t, string(kiroPayload), `"profileArn":`)
 }

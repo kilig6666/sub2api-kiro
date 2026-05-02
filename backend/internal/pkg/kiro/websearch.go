@@ -63,7 +63,8 @@ type SearchIndicator struct {
 
 func GetCachedWebSearchDescription() string {
 	if v := cachedWebSearchDescription.Load(); v != nil {
-		return strings.TrimSpace(v.(string))
+		desc, _ := v.(string)
+		return strings.TrimSpace(desc)
 	}
 	return ""
 }

@@ -491,14 +491,6 @@ func buildKiroEndpoints(account *Account) []kiroEndpointConfig {
 	}
 }
 
-func buildKiroPayloadForAccount(ctx context.Context, account *Account, anthropicBody []byte, modelID, token, requestModel string, headers http.Header) ([]byte, error) {
-	result, err := buildKiroPayloadForAccountWithRepo(ctx, nil, account, anthropicBody, modelID, token, requestModel, headers)
-	if err != nil {
-		return nil, err
-	}
-	return result.Payload, nil
-}
-
 func buildKiroPayloadForAccountWithRepo(ctx context.Context, repo AccountRepository, account *Account, anthropicBody []byte, modelID, token, requestModel string, headers http.Header) (*kiropkg.KiroBuildResult, error) {
 	profileArn := resolveKiroPayloadProfileArn(account)
 	anthropicBody = prepareKiroPayloadBodyForRequestModel(anthropicBody, requestModel)
