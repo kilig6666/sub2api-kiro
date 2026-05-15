@@ -454,36 +454,24 @@
             </span>
           </div>
           <!-- 分组选择下拉 -->
-          <select
-            class="input"
+          <Select
+            :model-value="null"
+            :options="copyAccountsCreateSelectOptions"
+            :placeholder="t('admin.groups.copyAccounts.selectPlaceholder')"
             @change="
-              (e) => {
-                const val = Number((e.target as HTMLSelectElement).value);
+              (val) => {
+                const id = Number(val);
                 if (
-                  val &&
-                  !createForm.copy_accounts_from_group_ids.includes(val)
+                  id &&
+                  !createForm.copy_accounts_from_group_ids.includes(id)
                 ) {
-                  createForm.copy_accounts_from_group_ids.push(val);
+                  createForm.copy_accounts_from_group_ids.push(id);
                 }
-                (e.target as HTMLSelectElement).value = '';
               }
             "
-          >
-            <option value="">
-              {{ t("admin.groups.copyAccounts.selectPlaceholder") }}
-            </option>
-            <option
-              v-for="opt in copyAccountsGroupOptions"
-              :key="opt.value"
-              :value="opt.value"
-              :disabled="
-                createForm.copy_accounts_from_group_ids.includes(opt.value)
-              "
-            >
-              {{ opt.label }}
-            </option>
-          </select>
+          />
           <p class="input-hint">{{ t("admin.groups.copyAccounts.hint") }}</p>
+
         </div>
         <div>
           <label class="input-label">{{
@@ -1667,35 +1655,22 @@
             </span>
           </div>
           <!-- 分组选择下拉 -->
-          <select
-            class="input"
+          <Select
+            :model-value="null"
+            :options="copyAccountsEditSelectOptions"
+            :placeholder="t('admin.groups.copyAccounts.selectPlaceholder')"
             @change="
-              (e) => {
-                const val = Number((e.target as HTMLSelectElement).value);
+              (val) => {
+                const id = Number(val);
                 if (
-                  val &&
-                  !editForm.copy_accounts_from_group_ids.includes(val)
+                  id &&
+                  !editForm.copy_accounts_from_group_ids.includes(id)
                 ) {
-                  editForm.copy_accounts_from_group_ids.push(val);
+                  editForm.copy_accounts_from_group_ids.push(id);
                 }
-                (e.target as HTMLSelectElement).value = '';
               }
             "
-          >
-            <option value="">
-              {{ t("admin.groups.copyAccounts.selectPlaceholder") }}
-            </option>
-            <option
-              v-for="opt in copyAccountsGroupOptionsForEdit"
-              :key="opt.value"
-              :value="opt.value"
-              :disabled="
-                editForm.copy_accounts_from_group_ids.includes(opt.value)
-              "
-            >
-              {{ opt.label }}
-            </option>
-          </select>
+          />
           <p class="input-hint">
             {{ t("admin.groups.copyAccounts.hintEdit") }}
           </p>
@@ -3094,6 +3069,14 @@ const copyAccountsGroupOptions = computed(() => {
   }));
 });
 
+// 创建表单下拉的选项：将已选分组置为 disabled，避免重复添加
+const copyAccountsCreateSelectOptions = computed(() =>
+  copyAccountsGroupOptions.value.map((opt) => ({
+    ...opt,
+    disabled: createForm.copy_accounts_from_group_ids.includes(opt.value),
+  })),
+);
+
 // 复制账号的源分组选项（编辑时）- 仅包含相同平台且有账号的分组，排除自身
 const copyAccountsGroupOptionsForEdit = computed(() => {
   const currentId = editingGroup.value?.id;
@@ -3108,6 +3091,14 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
     label: `${g.name} (${g.account_count || 0} 个账号)`,
   }));
 });
+
+// 编辑表单下拉的选项：将已选分组置为 disabled
+const copyAccountsEditSelectOptions = computed(() =>
+  copyAccountsGroupOptionsForEdit.value.map((opt) => ({
+    ...opt,
+    disabled: editForm.copy_accounts_from_group_ids.includes(opt.value),
+  })),
+);
 
 const groups = ref<AdminGroup[]>([]);
 const loading = ref(false);
