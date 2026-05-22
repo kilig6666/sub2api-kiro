@@ -4467,6 +4467,19 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return nil, fmt.Errorf("parse request: empty request")
 	}
 
+	// Web Search 模拟：纯 web_search 请求时，直接调用搜索 API 构造响应。
+	// Kiro OAuth 在 forwardKiroMessages 内部完成模型映射后再判断，避免使用未映射的请求体。
+	if account != nil && !(account.Platform == PlatformKiro && account.Type == AccountTypeOAuth) && s.shouldEmulateWebSearch(ctx, account, parsed.GroupID, parsed.Body) {
+		return s.handleWebSearchEmulation(ctx, c, account, parsed)
+	}
+
+	// Bedrock CC 兼容：在转发之前对请求体做 CC 兼容处理。
+	// 只修改 body 内容（thinking 类型、tool_use ID），不影响后续的透传/Bedrock 转发路径。
+	if account != nil && s.isBedrockCCCompatEnabled(ctx, account, parsed.GroupID) {
+		parsed.Body = sanitizeBedrockThinking(parsed.Body, parsed.Model)
+		parsed.Body = sanitizeBedrockToolUseIDs(parsed.Body)
+	}
+
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
 		passthroughBody := parsed.Body
 		passthroughModel := parsed.Model
@@ -4492,11 +4505,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	if account != nil && account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
 		return s.forwardKiroMessages(ctx, c, account, parsed, startTime)
-	}
-
-	// Web Search 模拟：纯 web_search 请求时，直接调用搜索 API 构造响应
-	if account != nil && s.shouldEmulateWebSearch(ctx, account, parsed.GroupID, parsed.Body) {
-		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
 
 	// Beta policy: evaluate once; block check + cache filter set for buildUpstreamRequest.
@@ -5769,6 +5777,18 @@ func writeAnthropicPassthroughResponseHeaders(dst http.Header, src http.Header, 
 	}
 }
 
+// isBedrockCCCompatEnabled 检查渠道是否启用了 Bedrock CC 兼容模式
+func (s *GatewayService) isBedrockCCCompatEnabled(ctx context.Context, account *Account, groupID *int64) bool {
+	if groupID == nil || s.channelService == nil {
+		return false
+	}
+	ch, err := s.channelService.GetChannelForGroup(ctx, *groupID)
+	if err != nil || ch == nil {
+		return false
+	}
+	return ch.IsBedrockCCCompatEnabled(account.Platform)
+}
+
 // forwardBedrock 转发请求到 AWS Bedrock
 func (s *GatewayService) forwardBedrock(
 	ctx context.Context,
@@ -5801,7 +5821,7 @@ func (s *GatewayService) forwardBedrock(
 		return nil, err
 	}
 
-	bedrockBody, err := PrepareBedrockRequestBodyWithTokens(body, mappedModel, betaTokens)
+	bedrockBody, err := PrepareBedrockRequestBodyWithTokens(body, mappedModel, betaTokens, false)
 	if err != nil {
 		return nil, fmt.Errorf("prepare bedrock request body: %w", err)
 	}
