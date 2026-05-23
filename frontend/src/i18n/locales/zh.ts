@@ -3912,7 +3912,20 @@ export default {
           tokenJsonHint: '先在 Kiro IDE 完成登录，再粘贴 `~/.aws/sso/cache/kiro-auth-token.json` 的内容。',
           deviceRegistrationLabel: 'Device Registration JSON',
           deviceRegistrationHint: '可选。只有 token 文件里缺少完整客户端信息、只剩 `clientIdHash` 时才需要补充。',
-          importAndUpdate: '导入并更新'
+          importAndUpdate: '导入并更新',
+          batchImportTitle: '批量导入',
+          batchImportSubtitle: '导入 Kiro-Go-Plus 导出的 JSON',
+          batchImportDialogTitle: '批量导入 Kiro 账号',
+          batchImportJsonLabel: 'Kiro 账号 JSON',
+          batchImportHint: '支持单个 JSON Object、JSON Array，或包含 accounts 数组的导出 JSON。每条至少需要 refreshToken / refresh_token。',
+          batchImportCreate: '导入并创建',
+          batchImportInvalidRoot: 'JSON 根节点必须是对象或数组',
+          batchImportItemNotObject: '账号数据必须是对象',
+          batchImportMissingRefreshToken: '缺少 refreshToken',
+          batchImportInvalidItem: '账号数据无效',
+          batchImportNoValidAccounts: '没有可导入的有效账号',
+          batchImportCreateFailed: '创建失败',
+          batchImportJsonInvalid: 'JSON 格式无效，请检查后重试'
         }
       },
       // Gemini specific (platform-wide)

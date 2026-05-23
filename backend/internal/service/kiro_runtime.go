@@ -128,8 +128,9 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 		if streamResult.usage == nil {
 			streamResult.usage = &ClaudeUsage{}
 		}
+		requestID := buildKiroRequestID(resp)
 		return &ForwardResult{
-			RequestID:        resp.Header.Get("x-request-id"),
+			RequestID:        requestID,
 			Usage:            *streamResult.usage,
 			Model:            originalModel,
 			UpstreamModel:    upstreamModel,
@@ -156,6 +157,7 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 			c.Header("Content-Type", "application/json")
 			if webSearchResult.RequestID != "" {
 				c.Header("x-request-id", webSearchResult.RequestID)
+				c.Header("request-id", webSearchResult.RequestID)
 			}
 			c.Data(http.StatusOK, "application/json", webSearchResult.ResponseBody)
 			return &ForwardResult{
@@ -240,15 +242,17 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 	}
 
 	c.Header("Content-Type", "application/json")
-	if requestID := resp.Header.Get("x-request-id"); requestID != "" {
+	requestID := buildKiroRequestID(resp)
+	if requestID != "" {
 		c.Header("x-request-id", requestID)
+		c.Header("request-id", requestID)
 	}
 	c.Data(http.StatusOK, "application/json", parseResult.ResponseBody)
 
 	upstreamModel := normalizeModelNameForPricing(kiropkg.MapModel(mappedModel))
 
 	return &ForwardResult{
-		RequestID:     resp.Header.Get("x-request-id"),
+		RequestID:     requestID,
 		Usage:         kiroUsageToClaude(parseResult.Usage, inputTokens),
 		Model:         originalModel,
 		UpstreamModel: upstreamModel,
@@ -306,6 +310,7 @@ func (s *GatewayService) openKiroAnthropicStreamResponse(ctx context.Context, ac
 	wrappedHeaders.Set("Content-Type", "text/event-stream")
 	if requestID := buildKiroRequestID(resp); requestID != "" {
 		wrappedHeaders.Set("x-request-id", requestID)
+		wrappedHeaders.Set("request-id", requestID)
 	}
 
 	go func() {
@@ -678,7 +683,7 @@ func (s *GatewayService) handleKiroHTTPError(ctx context.Context, resp *http.Res
 			AccountID:          account.ID,
 			AccountName:        account.Name,
 			UpstreamStatusCode: resp.StatusCode,
-			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			UpstreamRequestID:  buildKiroRequestID(resp),
 			Kind:               "failover",
 			Message:            upstreamMsg,
 		})
@@ -698,7 +703,7 @@ func (s *GatewayService) handleKiroHTTPError(ctx context.Context, resp *http.Res
 		AccountID:          account.ID,
 		AccountName:        account.Name,
 		UpstreamStatusCode: resp.StatusCode,
-		UpstreamRequestID:  resp.Header.Get("x-request-id"),
+		UpstreamRequestID:  buildKiroRequestID(resp),
 		Kind:               "http_error",
 		Message:            upstreamMsg,
 	})
@@ -726,7 +731,7 @@ func (s *GatewayService) buildKiroInvalidModelUpstreamEvent(account *Account, re
 		AccountID:           account.ID,
 		AccountName:         account.Name,
 		UpstreamStatusCode:  resp.StatusCode,
-		UpstreamRequestID:   resp.Header.Get("x-request-id"),
+		UpstreamRequestID:   buildKiroRequestID(resp),
 		Kind:                "failover",
 		Message:             upstreamMsg,
 		RequestedModel:      requestedModel,

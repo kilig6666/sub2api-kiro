@@ -7487,6 +7487,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	}
 
 	needModelReplace := originalModel != mappedModel
+	isKiroStream := account != nil && account.Platform == PlatformKiro
 	clientDisconnected := false // 客户端断开标志，断开后继续读取上游以获取完整usage
 	sawTerminalEvent := false
 
@@ -7623,6 +7624,24 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			if !ok {
 				// 上游完成，返回结果
 				if !sawTerminalEvent {
+					if isKiroStream {
+						msg := "upstream stream ended before a terminal event"
+						if !c.Writer.Written() {
+							body, _ := json.Marshal(map[string]any{
+								"type": "error",
+								"error": map[string]string{
+									"type":    "stream_incomplete",
+									"message": msg,
+								},
+							})
+							return nil, &UpstreamFailoverError{
+								StatusCode:             http.StatusBadGateway,
+								ResponseBody:           body,
+								RetryableOnSameAccount: true,
+							}
+						}
+						sendErrorEvent("stream_incomplete", msg)
+					}
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
 				}
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
@@ -7683,6 +7702,35 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				if err != nil {
 					if clientDisconnected {
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
+					}
+					if isKiroStream {
+						if !c.Writer.Written() {
+							body := []byte(data)
+							if len(body) == 0 || !json.Valid(body) {
+								body, _ = json.Marshal(map[string]any{
+									"type": "error",
+									"error": map[string]string{
+										"type":    "stream_error",
+										"message": sanitizeStreamError(err),
+									},
+								})
+							}
+							return nil, &UpstreamFailoverError{
+								StatusCode:             http.StatusBadGateway,
+								ResponseBody:           body,
+								RetryableOnSameAccount: true,
+							}
+						}
+						if data != "" && json.Valid([]byte(data)) {
+							if _, werr := fmt.Fprintf(w, "event: error\ndata: %s\n\n", data); werr != nil {
+								clientDisconnected = true
+								return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
+							}
+							flusher.Flush()
+						} else {
+							sendErrorEvent("stream_error", sanitizeStreamError(err))
+						}
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
 					}
 					return nil, err
 				}
@@ -9110,7 +9158,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return nil
 	}
 	if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
-		s.countTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported for this platform")
+		c.JSON(http.StatusOK, gin.H{"input_tokens": estimateKiroInputTokens(body)})
 		return nil
 	}
 

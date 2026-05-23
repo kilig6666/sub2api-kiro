@@ -3768,7 +3768,20 @@ export default {
           tokenJsonHint: 'Sign in through Kiro IDE first, then paste the contents of `~/.aws/sso/cache/kiro-auth-token.json` here.',
           deviceRegistrationLabel: 'Device Registration JSON',
           deviceRegistrationHint: 'Optional. Only needed when the token file does not include full client details and only has `clientIdHash`.',
-          importAndUpdate: 'Import and Update'
+          importAndUpdate: 'Import and Update',
+          batchImportTitle: 'Batch Import',
+          batchImportSubtitle: 'Import JSON exported from Kiro-Go-Plus',
+          batchImportDialogTitle: 'Batch Import Kiro Accounts',
+          batchImportJsonLabel: 'Kiro Account JSON',
+          batchImportHint: 'Supports a single JSON object, a JSON array, or an export JSON with an accounts array. Each item must include refreshToken / refresh_token.',
+          batchImportCreate: 'Import and Create',
+          batchImportInvalidRoot: 'JSON root must be an object or an array',
+          batchImportItemNotObject: 'Account data must be an object',
+          batchImportMissingRefreshToken: 'Missing refreshToken',
+          batchImportInvalidItem: 'Invalid account data',
+          batchImportNoValidAccounts: 'No valid accounts to import',
+          batchImportCreateFailed: 'Create failed',
+          batchImportJsonInvalid: 'Invalid JSON format. Please check and try again'
         }
       },
       // Gemini specific (platform-wide)

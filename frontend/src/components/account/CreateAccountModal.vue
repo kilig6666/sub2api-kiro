@@ -841,7 +841,7 @@
       <!-- Kiro OAuth auth mode selection -->
       <div v-if="form.platform === 'kiro' && accountCategory === 'oauth-based'">
         <label class="input-label">{{ t('admin.accounts.oauth.kiro.authModeTitle') }}</label>
-        <div class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-4">
           <button
             type="button"
             @click="kiroAccountType = 'oauth'"
@@ -905,6 +905,28 @@
               </span>
               <span class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.oauth.kiro.importSubtitle') }}
+              </span>
+            </div>
+          </button>
+          <button
+            type="button"
+            @click="kiroAccountType = 'batch_import'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              kiroAccountType === 'batch_import'
+                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                : 'border-gray-200 hover:border-emerald-300 dark:border-dark-600 dark:hover:border-emerald-700'
+            ]"
+          >
+            <div :class="['flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', kiroAccountType === 'batch_import' ? 'bg-emerald-600 text-white dark:bg-emerald-500' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400']">
+              <Icon name="upload" size="sm" />
+            </div>
+            <div class="min-w-0">
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">
+                {{ t('admin.accounts.oauth.kiro.batchImportTitle') }}
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.oauth.kiro.batchImportSubtitle') }}
               </span>
             </div>
           </button>
@@ -3289,7 +3311,17 @@
 
     <!-- Step 2: OAuth Authorization -->
     <div v-else class="space-y-5">
-      <div v-if="isKiroImportMode" class="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+      <div v-if="isKiroBatchImportMode" class="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-700 dark:bg-emerald-900/20">
+        <div>
+          <label class="input-label">{{ t('admin.accounts.oauth.kiro.batchImportJsonLabel') }}</label>
+          <textarea v-model="kiroBatchImportJson" rows="12" class="input font-mono text-xs" placeholder='{"clientId":"","clientSecret":"","accessToken":"...","refreshToken":"...","provider":"Google"}'></textarea>
+          <p class="input-hint">{{ t('admin.accounts.oauth.kiro.batchImportHint') }}</p>
+        </div>
+        <div v-if="kiroBatchImportError" class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30">
+          <p class="whitespace-pre-line text-sm text-red-600 dark:text-red-400">{{ kiroBatchImportError }}</p>
+        </div>
+      </div>
+      <div v-else-if="isKiroImportMode" class="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
         <div>
           <label class="input-label">{{ t('admin.accounts.oauth.kiro.tokenJsonLabel') }}</label>
           <textarea v-model="kiroTokenJson" rows="8" class="input font-mono text-xs" placeholder='{"accessToken":"...","refreshToken":"..."}'></textarea>
@@ -3379,7 +3411,16 @@
           {{ t('common.back') }}
         </button>
         <button
-          v-if="isKiroImportMode"
+          v-if="isKiroBatchImportMode"
+          type="button"
+          :disabled="submitting || !kiroBatchImportJson.trim()"
+          class="btn btn-primary"
+          @click="handleKiroBatchImport"
+        >
+          {{ submitting ? t('admin.accounts.creating') : t('admin.accounts.oauth.kiro.batchImportCreate') }}
+        </button>
+        <button
+          v-else-if="isKiroImportMode"
           type="button"
           :disabled="currentOAuthLoading || !kiroTokenJson.trim()"
           class="btn btn-primary"
@@ -3738,9 +3779,9 @@ const oauthStepTitle = computed(() => {
   if (form.platform === 'gemini') return t('admin.accounts.oauth.gemini.title')
   if (form.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.title')
   if (form.platform === 'kiro') {
-    return kiroAccountType.value === 'import'
-      ? t('admin.accounts.oauth.kiro.importDialogTitle')
-      : t('admin.accounts.oauth.kiro.title')
+    if (kiroAccountType.value === 'import') return t('admin.accounts.oauth.kiro.importDialogTitle')
+    if (kiroAccountType.value === 'batch_import') return t('admin.accounts.oauth.kiro.batchImportDialogTitle')
+    return t('admin.accounts.oauth.kiro.title')
   }
   return t('admin.accounts.oauth.title')
 })
@@ -3891,12 +3932,14 @@ const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist'
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
-const kiroAccountType = ref<'oauth' | 'idc' | 'import'>('oauth')
+const kiroAccountType = ref<'oauth' | 'idc' | 'import' | 'batch_import'>('oauth')
 const kiroOAuthProvider = ref<'google' | 'github'>('google')
 const kiroIDCStartUrl = ref('https://view.awsapps.com/start')
 const kiroIDCRegion = ref('us-east-1')
 const kiroTokenJson = ref('')
 const kiroDeviceRegistrationJson = ref('')
+const kiroBatchImportJson = ref('')
+const kiroBatchImportError = ref('')
 const kiroModelMappings = ref<ModelMapping[]>([])
 const kiroPresetMappings = computed(() => getPresetMappingsByPlatform('kiro'))
 const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
@@ -4112,6 +4155,7 @@ const isOAuthFlow = computed(() => {
 })
 
 const isKiroImportMode = computed(() => form.platform === 'kiro' && kiroAccountType.value === 'import')
+const isKiroBatchImportMode = computed(() => form.platform === 'kiro' && kiroAccountType.value === 'batch_import')
 
 const isManualInputMethod = computed(() => {
   return oauthFlowRef.value?.inputMethod === 'manual'
@@ -4236,6 +4280,7 @@ watch(
       accountCategory.value = 'oauth-based'
       kiroAccountType.value = 'oauth'
       kiroOAuthProvider.value = 'google'
+      kiroBatchImportError.value = ''
       apiKeyBaseUrl.value = ''
       apiKeyValue.value = ''
     } else {
@@ -4694,6 +4739,8 @@ const resetForm = () => {
   kiroIDCRegion.value = 'us-east-1'
   kiroTokenJson.value = ''
   kiroDeviceRegistrationJson.value = ''
+  kiroBatchImportJson.value = ''
+  kiroBatchImportError.value = ''
   fetchKiroDefaultMappings().then(mappings => {
     kiroModelMappings.value = [...mappings]
   })
@@ -5783,6 +5830,148 @@ const buildKiroCredentials = (tokenInfo: Parameters<typeof kiroOAuth.buildCreden
   return credentials
 }
 
+type KiroBatchImportItem = Record<string, unknown>
+
+const asKiroImportRecord = (value: unknown): KiroBatchImportItem | null => {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as KiroBatchImportItem
+    : null
+}
+
+const readKiroImportString = (source: KiroBatchImportItem, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return ''
+}
+
+const normalizeKiroImportExpiresAt = (source: KiroBatchImportItem) => {
+  const raw = source.expiresAt ?? source.expires_at
+  if (raw == null || raw === '') return ''
+  const numberValue = typeof raw === 'number' ? raw : Number(String(raw).trim())
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    return typeof raw === 'string' ? raw.trim() : ''
+  }
+  return String(numberValue > 9999999999 ? Math.floor(numberValue / 1000) : Math.floor(numberValue))
+}
+
+const normalizeKiroProvider = (provider: string, authMethod: string) => {
+  const lower = provider.toLowerCase()
+  if (lower === 'github') return 'Github'
+  if (lower === 'google') return 'Google'
+  if (provider) return provider
+  return authMethod === 'idc' ? 'BuilderId' : 'Google'
+}
+
+const normalizeKiroAuthMethod = (
+  rawAuthMethod: string,
+  provider: string,
+  clientId: string,
+  clientSecret: string
+) => {
+  const authMethod = rawAuthMethod.toLowerCase()
+  if (['idc', 'builderid', 'builder_id', 'enterprise', 'iam', 'external_idp'].includes(authMethod)) return 'idc'
+  if (['social', 'google', 'github'].includes(authMethod)) return 'social'
+
+  const normalizedProvider = provider.toLowerCase()
+  if (['builderid', 'enterprise', 'internal'].includes(normalizedProvider)) return 'idc'
+  if (['google', 'github'].includes(normalizedProvider)) return 'social'
+  return clientId || clientSecret ? 'idc' : 'social'
+}
+
+const extractKiroBatchImportItems = (raw: unknown) => {
+  if (Array.isArray(raw)) {
+    return raw
+  }
+  const record = asKiroImportRecord(raw)
+  if (!record) {
+    throw new Error(t('admin.accounts.oauth.kiro.batchImportInvalidRoot'))
+  }
+  if (Array.isArray(record.accounts)) {
+    return record.accounts.map((item) => {
+      const account = asKiroImportRecord(item)
+      if (!account) return item
+      const credentials = asKiroImportRecord(account.credentials)
+      return credentials ? { ...account, ...credentials } : account
+    })
+  }
+  return [record]
+}
+
+const normalizeKiroBatchImportAccount = (
+  rawItem: unknown,
+  index: number,
+  total: number
+): { account?: CreateAccountRequest; error?: string } => {
+  const source = asKiroImportRecord(rawItem)
+  if (!source) {
+    return { error: t('admin.accounts.oauth.kiro.batchImportItemNotObject') }
+  }
+
+  const accessToken = readKiroImportString(source, 'accessToken', 'access_token')
+  const refreshToken = readKiroImportString(source, 'refreshToken', 'refresh_token')
+  if (!refreshToken) {
+    return { error: t('admin.accounts.oauth.kiro.batchImportMissingRefreshToken') }
+  }
+
+  const clientId = readKiroImportString(source, 'clientId', 'client_id')
+  const clientSecret = readKiroImportString(source, 'clientSecret', 'client_secret')
+  const rawProvider = readKiroImportString(source, 'provider', 'idp')
+  const authMethod = normalizeKiroAuthMethod(
+    readKiroImportString(source, 'authMethod', 'auth_method'),
+    rawProvider,
+    clientId,
+    clientSecret
+  )
+
+  const credentials: Record<string, unknown> = {
+    refresh_token: refreshToken,
+    auth_method: authMethod,
+    provider: normalizeKiroProvider(rawProvider, authMethod),
+    region: readKiroImportString(source, 'region') || 'us-east-1'
+  }
+  if (accessToken) credentials.access_token = accessToken
+  if (clientId) credentials.client_id = clientId
+  if (clientSecret) credentials.client_secret = clientSecret
+  const clientIdHash = readKiroImportString(source, 'clientIdHash', 'client_id_hash')
+  if (clientIdHash) credentials.client_id_hash = clientIdHash
+  const profileArn = readKiroImportString(source, 'profileArn', 'profile_arn')
+  if (profileArn) credentials.profile_arn = profileArn
+  const email = readKiroImportString(source, 'email')
+  if (email) credentials.email = email
+  const startUrl = readKiroImportString(source, 'startUrl', 'start_url')
+  if (startUrl) credentials.start_url = startUrl
+  const apiRegion = readKiroImportString(source, 'apiRegion', 'api_region', 'profileRegion', 'profile_region')
+  if (apiRegion) credentials.api_region = apiRegion
+  const expiresAt = normalizeKiroImportExpiresAt(source)
+  if (expiresAt) credentials.expires_at = expiresAt
+
+  const modelMapping = buildModelMappingObject('mapping', [], kiroModelMappings.value)
+  if (modelMapping) {
+    credentials.model_mapping = modelMapping
+  }
+
+  return {
+    account: {
+      name: total > 1 ? `${form.name} #${index + 1}` : form.name,
+      notes: form.notes,
+      platform: 'kiro',
+      type: 'oauth',
+      credentials,
+      proxy_id: form.proxy_id,
+      concurrency: form.concurrency,
+      load_factor: form.load_factor ?? undefined,
+      priority: form.priority,
+      rate_multiplier: form.rate_multiplier,
+      group_ids: form.group_ids,
+      expires_at: form.expires_at,
+      auto_pause_on_expired: autoPauseOnExpired.value
+    }
+  }
+}
+
 const handleKiroExchange = async (authCode: string) => {
   if (!authCode.trim() || !kiroOAuth.sessionId.value) return
 
@@ -5940,6 +6129,66 @@ const handleKiroImport = async () => {
   } catch (error: any) {
     kiroOAuth.error.value = error.response?.data?.detail || t('admin.accounts.oauth.authFailed')
     appStore.showError(kiroOAuth.error.value)
+  }
+}
+
+const handleKiroBatchImport = async () => {
+  if (!isKiroBatchImportMode.value || !kiroBatchImportJson.value.trim()) return
+
+  submitting.value = true
+  kiroBatchImportError.value = ''
+  try {
+    const raw = JSON.parse(kiroBatchImportJson.value)
+    const items = extractKiroBatchImportItems(raw)
+    const accounts: CreateAccountRequest[] = []
+    const errors: string[] = []
+
+    items.forEach((item, index) => {
+      const result = normalizeKiroBatchImportAccount(item, index, items.length)
+      if (result.account) {
+        accounts.push(result.account)
+      } else {
+        errors.push(`#${index + 1}: ${result.error || t('admin.accounts.oauth.kiro.batchImportInvalidItem')}`)
+      }
+    })
+
+    if (accounts.length === 0) {
+      kiroBatchImportError.value = errors.join('\n') || t('admin.accounts.oauth.kiro.batchImportNoValidAccounts')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+      return
+    }
+
+    const result = await adminAPI.accounts.batchCreate(accounts)
+    const backendErrors = result.results
+      .map((item, index) => item.success ? '' : `#${index + 1}: ${item.error || t('admin.accounts.oauth.kiro.batchImportCreateFailed')}`)
+      .filter(Boolean)
+    const failedCount = errors.length + result.failed
+    const allErrors = [...errors, ...backendErrors]
+
+    if (result.success > 0 && failedCount === 0) {
+      appStore.showSuccess(
+        accounts.length > 1
+          ? t('admin.accounts.oauth.batchSuccess', { count: result.success })
+          : t('admin.accounts.accountCreated')
+      )
+      emit('created')
+      handleClose()
+    } else if (result.success > 0) {
+      kiroBatchImportError.value = allErrors.join('\n')
+      appStore.showWarning(t('admin.accounts.oauth.batchPartialSuccess', { success: result.success, failed: failedCount }))
+      emit('created')
+    } else {
+      kiroBatchImportError.value = allErrors.join('\n') || t('admin.accounts.oauth.kiro.batchImportNoValidAccounts')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+    }
+  } catch (error: any) {
+    kiroBatchImportError.value =
+      error instanceof SyntaxError
+        ? t('admin.accounts.oauth.kiro.batchImportJsonInvalid')
+        : error.message || t('admin.accounts.oauth.batchFailed')
+    appStore.showError(kiroBatchImportError.value)
+  } finally {
+    submitting.value = false
   }
 }
 
