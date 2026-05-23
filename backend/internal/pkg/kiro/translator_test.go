@@ -3,11 +3,14 @@ package kiro
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +79,70 @@ func TestBuildKiroPayloadAlwaysIgnoresClientConversationMetadata(t *testing.T) {
 	require.False(t, gjson.GetBytes(result.Payload, "conversationState.agentContinuationId").Exists())
 }
 
+func TestBuildKiroPayloadNormalizesInferenceConfigForScoring(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-opus-4-7-thinking",
+		"max_tokens":128000,
+		"temperature":0.2,
+		"top_p":0.9,
+		"messages":[{"role":"user","content":"think"}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-opus-4.7", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(128000), gjson.GetBytes(result.Payload, "inferenceConfig.maxTokens").Int())
+	require.Equal(t, 0.2, gjson.GetBytes(result.Payload, "inferenceConfig.temperature").Float())
+	require.False(t, gjson.GetBytes(result.Payload, "inferenceConfig.topP").Exists())
+	systemContent := gjson.GetBytes(result.Payload, "conversationState.history.0.userInputMessage.content").String()
+	require.Contains(t, systemContent, "<thinking_mode>adaptive</thinking_mode>")
+	require.Contains(t, systemContent, "<thinking_effort>high</thinking_effort>")
+}
+
+func TestBuildKiroPayloadPreservesZeroTemperature(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5",
+		"temperature":0,
+		"messages":[{"role":"user","content":"hello"}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+
+	require.True(t, gjson.GetBytes(result.Payload, "inferenceConfig.temperature").Exists())
+	require.Equal(t, 0.0, gjson.GetBytes(result.Payload, "inferenceConfig.temperature").Float())
+}
+
+func TestBuildKiroPayloadCapsOutputByModel(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"max_tokens":128000,
+		"messages":[{"role":"user","content":"long"}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.6", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(64000), gjson.GetBytes(result.Payload, "inferenceConfig.maxTokens").Int())
+	require.Equal(t, 64000, result.Context.MaxOutputTokens)
+}
+
+func TestBuildKiroPayloadKeepsTopPWhenTemperatureMissing(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5",
+		"max_tokens":64,
+		"top_p":0.9,
+		"messages":[{"role":"user","content":"hello"}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(64), gjson.GetBytes(result.Payload, "inferenceConfig.maxTokens").Int())
+	require.False(t, gjson.GetBytes(result.Payload, "inferenceConfig.temperature").Exists())
+	require.Equal(t, 0.9, gjson.GetBytes(result.Payload, "inferenceConfig.topP").Float())
+}
+
 func TestBuildKiroPayloadDoesNotInsertUserDotBeforeLeadingAssistant(t *testing.T) {
 	body := []byte(`{
 		"model":"claude-sonnet-4-5",
@@ -131,7 +198,7 @@ func TestBuildKiroPayloadOmitsImagesBeyondRecentHistory(t *testing.T) {
 			{"role":"assistant","content":"first answer"},
 			{"role":"user","content":[
 				{"type":"text","text":"stale image"},
-				{"type":"image","source":{"media_type":"image/png","data":"stale-image"}}
+				{"type":"image","source":{"media_type":"image/png","data":"c3RhbGU="}}
 			]},
 			{"role":"assistant","content":"second answer"},
 			{"role":"user","content":"middle"},
@@ -140,7 +207,7 @@ func TestBuildKiroPayloadOmitsImagesBeyondRecentHistory(t *testing.T) {
 			{"role":"tool","content":"ignored separator"},
 			{"role":"user","content":[
 				{"type":"text","text":"current image"},
-				{"type":"image","source":{"media_type":"image/jpeg","data":"current-image"}}
+				{"type":"image","source":{"media_type":"image/jpeg","data":"Y3VycmVudA=="}}
 			]}
 		]
 	}`)
@@ -153,7 +220,7 @@ func TestBuildKiroPayloadOmitsImagesBeyondRecentHistory(t *testing.T) {
 	require.False(t, staleUser.Get("images").Exists())
 	require.Contains(t, staleUser.Get("content").String(), "stale image")
 	require.Contains(t, staleUser.Get("content").String(), "[This message contained 1 image(s), omitted from older conversation history.]")
-	require.Equal(t, "current-image", gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.images.0.source.bytes").String())
+	require.Equal(t, "Y3VycmVudA==", gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.images.0.source.bytes").String())
 }
 
 func TestBuildKiroPayloadKeepsImagesAtRecentHistoryBoundary(t *testing.T) {
@@ -164,7 +231,7 @@ func TestBuildKiroPayloadKeepsImagesAtRecentHistoryBoundary(t *testing.T) {
 			{"role":"assistant","content":"first answer"},
 			{"role":"user","content":[
 				{"type":"text","text":"boundary image"},
-				{"type":"image","source":{"media_type":"image/png","data":"boundary-image"}}
+				{"type":"image","source":{"media_type":"image/png","data":"Ym91bmRhcnk="}}
 			]},
 			{"role":"assistant","content":"second answer"},
 			{"role":"user","content":"middle"},
@@ -179,8 +246,239 @@ func TestBuildKiroPayloadKeepsImagesAtRecentHistoryBoundary(t *testing.T) {
 	payload := kiroBuildResult.Payload
 
 	boundaryUser := gjson.GetBytes(payload, "conversationState.history.4.userInputMessage")
-	require.Equal(t, "boundary-image", boundaryUser.Get("images.0.source.bytes").String())
+	require.Equal(t, "Ym91bmRhcnk=", boundaryUser.Get("images.0.source.bytes").String())
 	require.NotContains(t, boundaryUser.Get("content").String(), "omitted from older conversation history")
+}
+
+func TestBuildKiroPayloadMapsOpenAIImageURLDataURI(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":[
+			{"type":"image_url","image_url":{"url":"data:image/jpg;base64,aGVsbG8="}}
+		]}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.6", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+
+	msg := gjson.GetBytes(result.Payload, "conversationState.currentMessage.userInputMessage")
+	require.Equal(t, " ", msg.Get("content").String())
+	require.Equal(t, "jpeg", msg.Get("images.0.format").String())
+	require.Equal(t, "aGVsbG8=", msg.Get("images.0.source.bytes").String())
+}
+
+func TestBuildKiroPayloadKeepsImageURLFallbackText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("not an image"))
+	}))
+	defer server.Close()
+
+	body := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":[
+			{"type":"text","text":"describe"},
+			{"type":"image_url","image_url":{"url":"` + server.URL + `/a.png"}}
+		]}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.6", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+
+	content := gjson.GetBytes(result.Payload, "conversationState.currentMessage.userInputMessage.content").String()
+	require.Contains(t, content, "describe")
+	require.Contains(t, content, "[Image: "+server.URL+"/a.png]")
+	require.False(t, gjson.GetBytes(result.Payload, "conversationState.currentMessage.userInputMessage.images").Exists())
+}
+
+func TestBuildKiroPayloadDownloadsRemoteImageURL(t *testing.T) {
+	imageBytes := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(imageBytes)
+	}))
+	defer server.Close()
+
+	body := []byte(`{
+		"model":"claude-sonnet-4-6",
+		"messages":[{"role":"user","content":[
+			{"type":"image_url","image_url":{"url":"` + server.URL + `/a.png"}}
+		]}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.6", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+
+	msg := gjson.GetBytes(result.Payload, "conversationState.currentMessage.userInputMessage")
+	require.Equal(t, " ", msg.Get("content").String())
+	require.Equal(t, "png", msg.Get("images.0.format").String())
+	require.Equal(t, base64.StdEncoding.EncodeToString(imageBytes), msg.Get("images.0.source.bytes").String())
+}
+
+func TestBuildKiroPayloadMapsPDFDocument(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5",
+		"messages":[{"role":"user","content":[
+			{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0xLjQK"},"name":"spec.pdf"},
+			{"type":"text","text":"summarize it"}
+		]}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	payload := result.Payload
+
+	require.False(t, gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.documents").Exists())
+	require.Equal(t, "summarize it", gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.content").String())
+}
+
+func TestBuildKiroPayloadAddsPDFTextFallback(t *testing.T) {
+	pdf := `%PDF-1.4
+1 0 obj
+<< /Length 58 >>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(Kiro PDF smoke text 42) Tj
+ET
+endstream
+endobj
+%%EOF`
+	body := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4-5",
+		"messages":[{"role":"user","content":[
+			{"type":"text","text":"before document"},
+			{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":%q},"name":"score.pdf"},
+			{"type":"text","text":"what number is inside?"}
+		]}]
+	}`, base64.StdEncoding.EncodeToString([]byte(pdf))))
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	content := gjson.GetBytes(result.Payload, "conversationState.currentMessage.userInputMessage.content").String()
+	require.Contains(t, content, "before document")
+	require.Contains(t, content, "[Extracted PDF text]")
+	require.Contains(t, content, "Kiro PDF smoke text 42")
+	require.Contains(t, content, "what number is inside?")
+}
+
+func TestBuildKiroPayloadStructuredOutputTool(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5",
+		"output_config":{"format":{"type":"json_schema","name":"answer_shape","schema":{
+			"type":"object",
+			"properties":{"answer":{"type":"string"}},
+			"required":["answer"],
+			"additionalProperties":false
+		}}},
+		"messages":[{"role":"user","content":"answer in schema"}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	payload := result.Payload
+	tool := gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.userInputMessageContext.tools.0.toolSpecification")
+	require.Equal(t, "answer_shape", tool.Get("name").String())
+	require.Equal(t, "object", tool.Get("inputSchema.json.type").String())
+	content := gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.content").String()
+	require.Contains(t, content, "MUST call the 'answer_shape' tool")
+}
+
+func TestBuildKiroPayloadStructuredOutputToolFromResponseFormat(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5",
+		"response_format":{"type":"json_schema","json_schema":{"name":"rf_shape","schema":{
+			"type":"object",
+			"properties":{"ok":{"type":"boolean"}},
+			"required":["ok"]
+		}}},
+		"messages":[{"role":"user","content":"answer in schema"}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	tool := gjson.GetBytes(result.Payload, "conversationState.currentMessage.userInputMessage.userInputMessageContext.tools.0.toolSpecification")
+	require.Equal(t, "rf_shape", tool.Get("name").String())
+	require.Equal(t, "boolean", tool.Get("inputSchema.json.properties.ok.type").String())
+}
+
+func TestBuildKiroPayloadStructuredOutputDoesNotDuplicateExistingTool(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5",
+		"response_format":{"type":"json_schema","json_schema":{"name":"answer_shape","schema":{
+			"type":"object",
+			"properties":{"answer":{"type":"string"}}
+		}}},
+		"tools":[{"name":"answer_shape","description":"existing","input_schema":{"type":"object","properties":{"answer":{"type":"string"}}}}],
+		"messages":[{"role":"user","content":"answer in schema"}]
+	}`)
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	tools := gjson.GetBytes(result.Payload, "conversationState.currentMessage.userInputMessage.userInputMessageContext.tools").Array()
+	require.Len(t, tools, 1)
+	require.Equal(t, "answer_shape", tools[0].Get("toolSpecification.name").String())
+}
+
+func TestBuildClaudeResponseExtractsStructuredOutputTool(t *testing.T) {
+	body := buildClaudeResponse("", []KiroToolUse{{
+		ToolUseID: "toolu_structured",
+		Name:      "answer_shape",
+		Input:     map[string]any{"answer": "ok"},
+	}}, "claude-sonnet-4-5", Usage{InputTokens: 5, OutputTokens: 3}, "tool_use", KiroRequestContext{StructuredOutputToolName: "answer_shape"})
+
+	require.Equal(t, "end_turn", gjson.GetBytes(body, "stop_reason").String())
+	require.True(t, gjson.GetBytes(body, "stop_sequence").Exists())
+	require.Equal(t, "text", gjson.GetBytes(body, "content.0.type").String())
+	require.JSONEq(t, `{"answer":"ok"}`, gjson.GetBytes(body, "content.0.text").String())
+	require.False(t, gjson.GetBytes(body, "content.0.name").Exists())
+}
+
+func TestBuildClaudeResponseAppliesStopSequences(t *testing.T) {
+	body := buildClaudeResponse("alpha STOP beta", nil, "claude-sonnet-4-5", Usage{InputTokens: 5, OutputTokens: 3}, "end_turn", KiroRequestContext{StopSequences: []string{"STOP"}})
+
+	require.Equal(t, "stop_sequence", gjson.GetBytes(body, "stop_reason").String())
+	require.Equal(t, "STOP", gjson.GetBytes(body, "stop_sequence").String())
+	require.Equal(t, "alpha ", gjson.GetBytes(body, "content.0.text").String())
+}
+
+func TestBuildClaudeResponseHonorsMaxOutputTokens(t *testing.T) {
+	body := buildClaudeResponse("one two three four", nil, "claude-sonnet-4-5", Usage{InputTokens: 5, OutputTokens: 8}, "end_turn", KiroRequestContext{MaxOutputTokens: 1})
+
+	require.Equal(t, "max_tokens", gjson.GetBytes(body, "stop_reason").String())
+	require.NotContains(t, gjson.GetBytes(body, "content.0.text").String(), "two three four")
+}
+
+func TestBuildKiroPayloadCompactsLargeToolResultButKeepsErrors(t *testing.T) {
+	longSuccess := strings.Repeat("success output ", 1200)
+	longError := strings.Repeat("error output ", 1200)
+	body := []byte(fmt.Sprintf(`{
+		"model":"claude-sonnet-4-5",
+		"messages":[
+			{"role":"assistant","content":[
+				{"type":"tool_use","id":"toolu_success","name":"Read","input":{"file_path":"a.txt"}},
+				{"type":"tool_use","id":"toolu_error","name":"Read","input":{"file_path":"b.txt"}}
+			]},
+			{"role":"user","content":[
+				{"type":"tool_result","tool_use_id":"toolu_success","content":%q},
+				{"type":"tool_result","tool_use_id":"toolu_error","is_error":true,"content":%q},
+				{"type":"text","text":"continue"}
+			]}
+		],
+		"tools":[{"name":"Read","description":"read file","input_schema":{"type":"object","properties":{"file_path":{"type":"string"}}}}]
+	}`, longSuccess, longError))
+
+	result, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	payload := result.Payload
+
+	successText := gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.userInputMessageContext.toolResults.0.content.0.text").String()
+	errorText := gjson.GetBytes(payload, "conversationState.currentMessage.userInputMessage.userInputMessageContext.toolResults.1.content.0.text").String()
+	require.Contains(t, successText, "[Output truncated for Kiro context:")
+	require.Less(t, len(successText), len(longSuccess))
+	require.Equal(t, longError, errorText)
+	require.NotContains(t, errorText, "[Output truncated for Kiro context:")
 }
 
 func TestBuildKiroPayloadWebSearchUsesCachedDescription(t *testing.T) {
@@ -297,6 +595,21 @@ func TestBuildKiroPayloadInjectsAdaptiveThinkingForOpus46ThinkingModel(t *testin
 	require.Contains(t, systemContent, "[Context: Current time is ")
 }
 
+func TestBuildKiroPayloadReasoningEffortOverridesThinkingAlias(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-opus-4-7-thinking",
+		"reasoning_effort":"low",
+		"messages":[{"role":"user","content":"hello kiro"}]
+	}`)
+
+	kiroBuildResult, err := BuildKiroPayloadWithContext(body, "claude-opus-4.7", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	payload := kiroBuildResult.Payload
+
+	systemContent := gjson.GetBytes(payload, "conversationState.history.0.userInputMessage.content").String()
+	require.Contains(t, systemContent, "<thinking_mode>adaptive</thinking_mode>\n<thinking_effort>low</thinking_effort>")
+}
+
 func TestBuildKiroPayloadInjectsThinkingForThinkingAliasModel(t *testing.T) {
 	body := []byte(`{
 		"model":"claude-sonnet-4-5-20250929-thinking",
@@ -341,6 +654,25 @@ func TestBuildKiroPayloadInjectsToolChoiceHints(t *testing.T) {
 	payload := kiroBuildResult.Payload
 
 	systemContent := gjson.GetBytes(payload, "conversationState.history.0.userInputMessage.content").String()
+	require.Contains(t, systemContent, "MUST use the tool named 'remote_web_search'")
+}
+
+func TestBuildKiroPayloadForcedToolChoiceDisablesThinking(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5-thinking",
+		"thinking":{"type":"enabled","budget_tokens":16000},
+		"messages":[{"role":"user","content":"hello kiro"}],
+		"tools":[{"name":"web_search","description":"search", "input_schema":{"type":"object","properties":{"query":{"type":"string"}}}}],
+		"tool_choice":{"type":"tool","name":"web_search"}
+	}`)
+
+	kiroBuildResult, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	payload := kiroBuildResult.Payload
+
+	systemContent := gjson.GetBytes(payload, "conversationState.history.0.userInputMessage.content").String()
+	require.NotContains(t, systemContent, "<thinking_mode>")
+	require.False(t, kiroBuildResult.Context.ThinkingEnabled)
 	require.Contains(t, systemContent, "MUST use the tool named 'remote_web_search'")
 }
 
@@ -410,6 +742,8 @@ func TestParseNonStreamingEventStream(t *testing.T) {
 	var response map[string]any
 	require.NoError(t, json.Unmarshal(result.ResponseBody, &response))
 	require.Equal(t, "end_turn", response["stop_reason"])
+	require.Contains(t, response, "stop_sequence")
+	require.Nil(t, response["stop_sequence"])
 	content, _ := response["content"].([]any)
 	require.NotEmpty(t, content)
 	first, _ := content[0].(map[string]any)
@@ -417,6 +751,7 @@ func TestParseNonStreamingEventStream(t *testing.T) {
 	firstText, ok := first["text"].(string)
 	require.True(t, ok)
 	require.True(t, strings.Contains(firstText, "hello from kiro"))
+	require.Regexp(t, regexp.MustCompile(`^msg_01[A-Za-z0-9]{22}$`), gjson.GetBytes(result.ResponseBody, "id").String())
 }
 
 func TestExtractThinkingBlocksIgnoresLiteralTags(t *testing.T) {
@@ -441,7 +776,7 @@ func TestExtractThinkingBlocksParsesRealTags(t *testing.T) {
 	require.Len(t, blocks, 2)
 	require.Equal(t, "thinking", blocks[0]["type"])
 	require.Equal(t, "reason", blocks[0]["thinking"])
-	require.NotEmpty(t, blocks[0]["signature"])
+	require.Equal(t, "", blocks[0]["signature"])
 	require.Equal(t, "text", blocks[1]["type"])
 	require.Equal(t, "final text", blocks[1]["text"])
 }
@@ -737,6 +1072,7 @@ func TestStreamEventStreamAsAnthropicDelaysMessageStartUntilContent(t *testing.T
 
 	output := out.String()
 	require.Contains(t, output, "event: message_start")
+	require.Regexp(t, regexp.MustCompile(`"id":"msg_01[A-Za-z0-9]{22}"`), output)
 	require.Contains(t, output, `"name":"remote_web_search"`)
 	require.Contains(t, output, `"partial_json":"{\"query\":\"golang\"}`)
 	messageStartIdx := strings.Index(output, "event: message_start")
@@ -908,6 +1244,63 @@ func TestStreamEventStreamAsAnthropicClosesOpenToolAtEOF(t *testing.T) {
 	require.Contains(t, out.String(), `event: content_block_stop`)
 }
 
+func TestStreamEventStreamAsAnthropicAppliesStopSequences(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{"content": "alpha STOP beta"},
+	}))
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{"content": " should not emit"},
+	}))
+
+	var out bytes.Buffer
+	result, err := StreamEventStreamAsAnthropicWithContext(context.Background(), stream, &out, "claude-sonnet-4-5", 9, KiroRequestContext{StopSequences: []string{"STOP"}})
+	require.NoError(t, err)
+
+	output := out.String()
+	require.Equal(t, "stop_sequence", result.StopReason)
+	require.Contains(t, output, `"text":"alpha "`)
+	require.NotContains(t, output, "beta")
+	require.NotContains(t, output, "should not emit")
+	require.Contains(t, output, `"stop_reason":"stop_sequence"`)
+	require.Contains(t, output, `"stop_sequence":"STOP"`)
+}
+
+func TestStreamEventStreamAsAnthropicDetectsSplitStopSequence(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{"content": "alpha ST"},
+	}))
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{"content": "OP beta"},
+	}))
+
+	var out bytes.Buffer
+	result, err := StreamEventStreamAsAnthropicWithContext(context.Background(), stream, &out, "claude-sonnet-4-5", 9, KiroRequestContext{StopSequences: []string{"STOP"}})
+	require.NoError(t, err)
+
+	require.Equal(t, "stop_sequence", result.StopReason)
+	require.Contains(t, out.String(), `"text":"alpha "`)
+	require.NotContains(t, out.String(), "alpha ST")
+	require.NotContains(t, out.String(), "OP beta")
+	require.Contains(t, out.String(), `"stop_sequence":"STOP"`)
+}
+
+func TestStreamEventStreamAsAnthropicHonorsMaxOutputTokens(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{"content": "one two three four"},
+	}))
+
+	var out bytes.Buffer
+	result, err := StreamEventStreamAsAnthropicWithContext(context.Background(), stream, &out, "claude-sonnet-4-5", 9, KiroRequestContext{MaxOutputTokens: 1})
+	require.NoError(t, err)
+
+	require.Equal(t, "max_tokens", result.StopReason)
+	require.Contains(t, out.String(), `"stop_reason":"max_tokens"`)
+	require.NotContains(t, out.String(), "two three four")
+}
+
 func TestStreamEventStreamAsAnthropicStreamsToolUseMapInput(t *testing.T) {
 	stream := bytes.NewBuffer(nil)
 	_, _ = stream.Write(buildEventStreamFrame(t, "toolUseEvent", map[string]any{
@@ -1022,6 +1415,7 @@ func TestStreamEventStreamAsAnthropicThinkingOnlyResponse(t *testing.T) {
 	require.Contains(t, output, `"type":"thinking"`)
 	require.Contains(t, output, `"type":"thinking_delta"`)
 	require.Contains(t, output, `"thinking":"I should think first."`)
+	require.NotContains(t, output, `"type":"signature_delta"`)
 	require.Contains(t, output, `"text":" "`)
 	require.Contains(t, output, `event: message_delta`)
 	require.Contains(t, output, `event: message_stop`)
