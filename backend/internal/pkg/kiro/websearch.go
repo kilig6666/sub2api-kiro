@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -135,7 +134,7 @@ func extractSearchText(content gjson.Result) string {
 }
 
 func GenerateToolUseID() string {
-	return strings.ReplaceAll(uuid.NewString(), "-", "")[:22]
+	return "01" + randomBase62(22)
 }
 
 func ReplaceWebSearchToolDescription(body []byte) ([]byte, error) {

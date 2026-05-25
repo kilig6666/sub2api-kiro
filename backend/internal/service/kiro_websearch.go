@@ -48,9 +48,9 @@ func (w *kiroStreamChunkCollector) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func bufferKiroAnthropicStream(ctx context.Context, body io.Reader, mappedModel string, inputTokens int) ([][]byte, *kiropkg.StreamResult, error) {
+func bufferKiroAnthropicStream(ctx context.Context, body io.Reader, responseModel string, inputTokens int) ([][]byte, *kiropkg.StreamResult, error) {
 	collector := &kiroStreamChunkCollector{}
-	result, err := kiropkg.StreamEventStreamAsAnthropicWithContext(ctx, body, collector, mappedModel, inputTokens, kiropkg.KiroRequestContext{})
+	result, err := kiropkg.StreamEventStreamAsAnthropicWithContext(ctx, body, collector, responseModel, inputTokens, kiropkg.KiroRequestContext{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -120,7 +120,7 @@ func (s *GatewayService) streamKiroWebSearchAsAnthropic(
 	currentToolUseID := "srvtoolu_" + kiropkg.GenerateToolUseID()
 	nextContentBlockIndex := 0
 
-	if err := writeAnthropicMessageStart(w, "", mappedModel, inputTokens, cacheUsage); err != nil {
+	if err := writeAnthropicMessageStart(w, "", requestModel, inputTokens, cacheUsage); err != nil {
 		return err
 	}
 
@@ -155,7 +155,7 @@ func (s *GatewayService) streamKiroWebSearchAsAnthropic(
 
 		chunks, _, streamErr := func() ([][]byte, *kiropkg.StreamResult, error) {
 			defer func() { _ = resp.Body.Close() }()
-			return bufferKiroAnthropicStream(ctx, resp.Body, mappedModel, inputTokens)
+			return bufferKiroAnthropicStream(ctx, resp.Body, requestModel, inputTokens)
 		}()
 		if streamErr != nil {
 			return streamErr
@@ -247,7 +247,7 @@ func (s *GatewayService) executeKiroWebSearch(ctx context.Context, account *Acco
 				cacheUsage = s.buildKiroCacheEmulationUsage(account, group, anthropicBody, mappedModel, inputTokens)
 				cacheUsageResolved = true
 			}
-			return kiropkg.ParseNonStreamingEventStreamWithContext(resp.Body, mappedModel, kiropkg.KiroRequestContext{CacheEmulationUsage: cacheUsage.toKiroUsage()})
+			return kiropkg.ParseNonStreamingEventStreamWithContext(resp.Body, requestModel, kiropkg.KiroRequestContext{CacheEmulationUsage: cacheUsage.toKiroUsage()})
 		}()
 		if parseErr != nil {
 			return nil, parseErr

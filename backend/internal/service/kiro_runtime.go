@@ -110,7 +110,7 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 			c.JSON(http.StatusBadGateway, gin.H{
 				"type": "error",
 				"error": gin.H{
-					"type":    "upstream_error",
+					"type":    "api_error",
 					"message": "Upstream request failed",
 				},
 			})
@@ -155,10 +155,9 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 		case webSearchErr == nil:
 			upstreamModel := normalizeModelNameForPricing(kiropkg.MapModel(mappedModel))
 			c.Header("Content-Type", "application/json")
-			if webSearchResult.RequestID != "" {
-				c.Header("x-request-id", webSearchResult.RequestID)
-				c.Header("request-id", webSearchResult.RequestID)
-			}
+			claudeReqID := kiropkg.NewClaudeRequestID()
+			c.Header("x-request-id", claudeReqID)
+			c.Header("request-id", claudeReqID)
 			c.Data(http.StatusOK, "application/json", webSearchResult.ResponseBody)
 			return &ForwardResult{
 				RequestID:     webSearchResult.RequestID,
@@ -189,7 +188,7 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 			c.JSON(http.StatusBadGateway, gin.H{
 				"type": "error",
 				"error": gin.H{
-					"type":    "upstream_error",
+					"type":    "api_error",
 					"message": "Upstream request failed",
 				},
 			})
@@ -216,7 +215,7 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type": "error",
 			"error": gin.H{
-				"type":    "upstream_error",
+				"type":    "api_error",
 				"message": "Upstream request failed",
 			},
 		})
@@ -229,12 +228,12 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 
 	cacheUsage := s.buildKiroCacheEmulationUsage(account, parsed.Group, body, mappedModel, inputTokens)
 	requestCtx.CacheEmulationUsage = cacheUsage.toKiroUsage()
-	parseResult, err := kiropkg.ParseNonStreamingEventStreamWithContext(resp.Body, mappedModel, requestCtx)
+	parseResult, err := kiropkg.ParseNonStreamingEventStreamWithContext(resp.Body, originalModel, requestCtx)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type": "error",
 			"error": gin.H{
-				"type":    "upstream_error",
+				"type":    "api_error",
 				"message": "Failed to parse Kiro upstream response",
 			},
 		})
@@ -243,10 +242,9 @@ func (s *GatewayService) forwardKiroMessages(ctx context.Context, c *gin.Context
 
 	c.Header("Content-Type", "application/json")
 	requestID := buildKiroRequestID(resp)
-	if requestID != "" {
-		c.Header("x-request-id", requestID)
-		c.Header("request-id", requestID)
-	}
+	claudeReqID := kiropkg.NewClaudeRequestID()
+	c.Header("x-request-id", claudeReqID)
+	c.Header("request-id", claudeReqID)
 	c.Data(http.StatusOK, "application/json", parseResult.ResponseBody)
 
 	upstreamModel := normalizeModelNameForPricing(kiropkg.MapModel(mappedModel))
@@ -308,15 +306,15 @@ func (s *GatewayService) openKiroAnthropicStreamResponse(ctx context.Context, ac
 	pr, pw := io.Pipe()
 	wrappedHeaders := resp.Header.Clone()
 	wrappedHeaders.Set("Content-Type", "text/event-stream")
-	if requestID := buildKiroRequestID(resp); requestID != "" {
-		wrappedHeaders.Set("x-request-id", requestID)
-		wrappedHeaders.Set("request-id", requestID)
-	}
+	claudeReqID := kiropkg.NewClaudeRequestID()
+	wrappedHeaders.Set("x-request-id", claudeReqID)
+	wrappedHeaders.Set("request-id", claudeReqID)
 
 	go func() {
 		defer func() { _ = resp.Body.Close() }()
-		_, streamErr := kiropkg.StreamEventStreamAsAnthropicWithContext(ctx, resp.Body, pw, mappedModel, inputTokens, requestCtx)
+		_, streamErr := kiropkg.StreamEventStreamAsAnthropicWithContext(ctx, resp.Body, pw, requestModel, inputTokens, requestCtx)
 		if streamErr != nil {
+			_, _ = io.WriteString(pw, "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"stream interrupted\"}}\n\n")
 			_ = pw.CloseWithError(streamErr)
 			return
 		}
@@ -710,11 +708,30 @@ func (s *GatewayService) handleKiroHTTPError(ctx context.Context, resp *http.Res
 	c.JSON(mapUpstreamStatusCode(resp.StatusCode), gin.H{
 		"type": "error",
 		"error": gin.H{
-			"type":    "upstream_error",
+			"type":    claudeErrorType(resp.StatusCode),
 			"message": coalesceKiroErrorMessage(resp.StatusCode, upstreamMsg),
 		},
 	})
 	return fmt.Errorf("kiro upstream error: %d %s", resp.StatusCode, upstreamMsg)
+}
+
+func claudeErrorType(statusCode int) string {
+	switch statusCode {
+	case http.StatusTooManyRequests:
+		return "rate_limit_error"
+	case http.StatusServiceUnavailable:
+		return "overloaded_error"
+	case http.StatusBadRequest:
+		return "invalid_request_error"
+	case http.StatusUnauthorized:
+		return "authentication_error"
+	case http.StatusForbidden:
+		return "permission_error"
+	case http.StatusNotFound:
+		return "not_found_error"
+	default:
+		return "api_error"
+	}
 }
 
 func (s *GatewayService) buildKiroInvalidModelUpstreamEvent(account *Account, resp *http.Response, upstreamMsg, mappedModel string, requestBody []byte, c *gin.Context) OpsUpstreamErrorEvent {

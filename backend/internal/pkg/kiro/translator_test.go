@@ -610,6 +610,31 @@ func TestBuildKiroPayloadReasoningEffortOverridesThinkingAlias(t *testing.T) {
 	require.Contains(t, systemContent, "<thinking_mode>adaptive</thinking_mode>\n<thinking_effort>low</thinking_effort>")
 }
 
+func TestBuildKiroPayloadDoesNotInjectThinkingForBaseOpus47WithoutConfig(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-opus-4-7",
+		"messages":[{"role":"user","content":"hello kiro"}]
+	}`)
+
+	kiroBuildResult, err := BuildKiroPayloadWithContext(body, "claude-opus-4.7", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	require.False(t, kiroBuildResult.Context.ThinkingEnabled, "base opus 4.7 should not inject thinking into system prompt")
+
+	systemContent := gjson.GetBytes(kiroBuildResult.Payload, "conversationState.history.0.userInputMessage.content").String()
+	require.NotContains(t, systemContent, "<thinking_mode>", "system prompt should not contain thinking directives")
+}
+
+func TestBuildKiroPayloadDoesNotEnableThinkingForNonAdaptiveModel(t *testing.T) {
+	body := []byte(`{
+		"model":"claude-sonnet-4-5",
+		"messages":[{"role":"user","content":"hello kiro"}]
+	}`)
+
+	kiroBuildResult, err := BuildKiroPayloadWithContext(body, "claude-sonnet-4.5", "", "AI_EDITOR", nil)
+	require.NoError(t, err)
+	require.False(t, kiroBuildResult.Context.ThinkingEnabled)
+}
+
 func TestBuildKiroPayloadInjectsThinkingForThinkingAliasModel(t *testing.T) {
 	body := []byte(`{
 		"model":"claude-sonnet-4-5-20250929-thinking",
@@ -751,7 +776,54 @@ func TestParseNonStreamingEventStream(t *testing.T) {
 	firstText, ok := first["text"].(string)
 	require.True(t, ok)
 	require.True(t, strings.Contains(firstText, "hello from kiro"))
-	require.Regexp(t, regexp.MustCompile(`^msg_01[A-Za-z0-9]{22}$`), gjson.GetBytes(result.ResponseBody, "id").String())
+	require.Regexp(t, regexp.MustCompile(`^msg_01[A-Za-z0-9]{25}$`), gjson.GetBytes(result.ResponseBody, "id").String())
+}
+
+func TestParseNonStreamingEventStreamPreservesResponseModelAlias(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{
+			"content": "hello",
+		},
+	}))
+
+	result, err := ParseNonStreamingEventStreamWithContext(stream, "claude-opus-4-7", KiroRequestContext{})
+	require.NoError(t, err)
+	require.Equal(t, "claude-opus-4-7", gjson.GetBytes(result.ResponseBody, "model").String())
+}
+
+func TestParseNonStreamingEventStreamParsesAdjacentThinkingTags(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{
+			"content": "<thinking> I</thinking><thinking>'m</thinking><thinking> reasoning</thinking>\n\nfinal",
+		},
+	}))
+
+	result, err := ParseNonStreamingEventStreamWithContext(stream, "claude-opus-4-7", KiroRequestContext{})
+	require.NoError(t, err)
+	require.Equal(t, "thinking", gjson.GetBytes(result.ResponseBody, "content.0.type").String())
+	require.Equal(t, " I'm reasoning", gjson.GetBytes(result.ResponseBody, "content.0.thinking").String())
+	require.Equal(t, "text", gjson.GetBytes(result.ResponseBody, "content.1.type").String())
+	require.Equal(t, "final", gjson.GetBytes(result.ResponseBody, "content.1.text").String())
+	require.NotContains(t, string(result.ResponseBody), "<thinking>")
+}
+
+func TestParseNonStreamingEventStreamParsesThinkingBeforeImmediateText(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{
+			"content": "<thinking> out.</thinking>分析过程：\n\n500",
+		},
+	}))
+
+	result, err := ParseNonStreamingEventStreamWithContext(stream, "claude-opus-4-7", KiroRequestContext{})
+	require.NoError(t, err)
+	require.Equal(t, "thinking", gjson.GetBytes(result.ResponseBody, "content.0.type").String())
+	require.Equal(t, " out.", gjson.GetBytes(result.ResponseBody, "content.0.thinking").String())
+	require.Equal(t, "text", gjson.GetBytes(result.ResponseBody, "content.1.type").String())
+	require.Equal(t, "分析过程：\n\n500", gjson.GetBytes(result.ResponseBody, "content.1.text").String())
+	require.NotContains(t, string(result.ResponseBody), "<thinking>")
 }
 
 func TestExtractThinkingBlocksIgnoresLiteralTags(t *testing.T) {
@@ -764,19 +836,19 @@ func TestExtractThinkingBlocksIgnoresLiteralTags(t *testing.T) {
 		"```",
 	}, "\n")
 
-	blocks := extractThinkingBlocks(content)
+	blocks := extractThinkingBlocks(content, "claude-sonnet-4-5", "msg_test")
 	require.Len(t, blocks, 1)
 	require.Equal(t, "text", blocks[0]["type"])
 	require.Equal(t, content, blocks[0]["text"])
 }
 
 func TestExtractThinkingBlocksParsesRealTags(t *testing.T) {
-	blocks := extractThinkingBlocks("<thinking>\nreason</thinking>\n\nfinal text")
+	blocks := extractThinkingBlocks("<thinking>\nreason</thinking>\n\nfinal text", "claude-sonnet-4-5", "msg_test")
 
 	require.Len(t, blocks, 2)
 	require.Equal(t, "thinking", blocks[0]["type"])
 	require.Equal(t, "reason", blocks[0]["thinking"])
-	require.Equal(t, "", blocks[0]["signature"])
+	require.NotEmpty(t, blocks[0]["signature"])
 	require.Equal(t, "text", blocks[1]["type"])
 	require.Equal(t, "final text", blocks[1]["text"])
 }
@@ -791,7 +863,7 @@ func TestParseNonStreamingEventStreamPureThinkingFallback(t *testing.T) {
 
 	result, err := ParseNonStreamingEventStreamWithContext(stream, "claude-sonnet-4-5", KiroRequestContext{})
 	require.NoError(t, err)
-	require.Equal(t, "max_tokens", gjson.GetBytes(result.ResponseBody, "stop_reason").String())
+	require.Equal(t, "end_turn", gjson.GetBytes(result.ResponseBody, "stop_reason").String())
 
 	content := gjson.GetBytes(result.ResponseBody, "content").Array()
 	require.Len(t, content, 2)
@@ -948,7 +1020,7 @@ func TestParseNonStreamingEventStreamThinkingOnlyResponse(t *testing.T) {
 
 	result, err := ParseNonStreamingEventStreamWithContext(stream, "claude-sonnet-4-5", KiroRequestContext{})
 	require.NoError(t, err)
-	require.Equal(t, "max_tokens", gjson.GetBytes(result.ResponseBody, "stop_reason").String())
+	require.Equal(t, "end_turn", gjson.GetBytes(result.ResponseBody, "stop_reason").String())
 	require.Equal(t, "thinking", gjson.GetBytes(result.ResponseBody, "content.0.type").String())
 	require.Equal(t, "I should think first.", gjson.GetBytes(result.ResponseBody, "content.0.thinking").String())
 	require.Equal(t, "text", gjson.GetBytes(result.ResponseBody, "content.1.type").String())
@@ -1072,7 +1144,7 @@ func TestStreamEventStreamAsAnthropicDelaysMessageStartUntilContent(t *testing.T
 
 	output := out.String()
 	require.Contains(t, output, "event: message_start")
-	require.Regexp(t, regexp.MustCompile(`"id":"msg_01[A-Za-z0-9]{22}"`), output)
+	require.Regexp(t, regexp.MustCompile(`"id":"msg_01[A-Za-z0-9]{25}"`), output)
 	require.Contains(t, output, `"name":"remote_web_search"`)
 	require.Contains(t, output, `"partial_json":"{\"query\":\"golang\"}`)
 	messageStartIdx := strings.Index(output, "event: message_start")
@@ -1409,14 +1481,13 @@ func TestStreamEventStreamAsAnthropicThinkingOnlyResponse(t *testing.T) {
 	var out bytes.Buffer
 	result, err := StreamEventStreamAsAnthropicWithContext(context.Background(), stream, &out, "claude-sonnet-4-5", 9, KiroRequestContext{ThinkingEnabled: true})
 	require.NoError(t, err)
-	require.Equal(t, "max_tokens", result.StopReason)
+	require.Equal(t, "end_turn", result.StopReason)
 
 	output := out.String()
 	require.Contains(t, output, `"type":"thinking"`)
 	require.Contains(t, output, `"type":"thinking_delta"`)
 	require.Contains(t, output, `"thinking":"I should think first."`)
-	require.NotContains(t, output, `"type":"signature_delta"`)
-	require.Contains(t, output, `"text":" "`)
+	require.Contains(t, output, `"type":"signature_delta"`)
 	require.Contains(t, output, `event: message_delta`)
 	require.Contains(t, output, `event: message_stop`)
 }
@@ -1527,6 +1598,72 @@ func TestStreamEventStreamAsAnthropicTreatsThinkingTagsAsTextWhenDisabled(t *tes
 	output := out.String()
 	require.Contains(t, output, `\u003cthinking\u003ereason\u003c/thinking\u003e`)
 	require.NotContains(t, output, `"type":"thinking_delta"`)
+}
+
+func TestStreamEventStreamAsAnthropicParsesAdjacentThinkingTags(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{
+			"content": "<thinking> I</thinking><thinking>'m</thinking><thinking> reasoning</thinking>\n\nfinal",
+		},
+	}))
+
+	var out bytes.Buffer
+	result, err := StreamEventStreamAsAnthropicWithContext(context.Background(), stream, &out, "claude-opus-4-7", 9, KiroRequestContext{ThinkingEnabled: true})
+	require.NoError(t, err)
+	require.Equal(t, "end_turn", result.StopReason)
+
+	output := out.String()
+	require.Contains(t, output, `"type":"thinking_delta"`)
+	require.Contains(t, output, `"type":"signature_delta"`)
+	require.Equal(t, 1, strings.Count(output, `"type":"signature_delta"`))
+	require.Contains(t, output, `"text":"final"`)
+	require.NotContains(t, output, "<thinking>")
+}
+
+func TestStreamEventStreamAsAnthropicMergesAdjacentThinkingTagsAcrossEvents(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	for _, chunk := range []string{"<thinking> I</thinking>", "<thinking>'m</thinking>", "<thinking> reasoning</thinking>\n\nfinal"} {
+		_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+			"assistantResponseEvent": map[string]any{"content": chunk},
+		}))
+	}
+
+	var out bytes.Buffer
+	result, err := StreamEventStreamAsAnthropicWithContext(context.Background(), stream, &out, "claude-opus-4-7", 9, KiroRequestContext{ThinkingEnabled: true})
+	require.NoError(t, err)
+	require.Equal(t, "end_turn", result.StopReason)
+
+	output := out.String()
+	require.Contains(t, output, `"thinking":" I"`)
+	require.Contains(t, output, `"thinking":"'m"`)
+	require.Contains(t, output, `"thinking":" reasoning"`)
+	require.Contains(t, output, `"text":"final"`)
+	require.Equal(t, 1, strings.Count(output, `"type":"signature_delta"`))
+	require.NotContains(t, output, "<thinking>")
+}
+
+func TestStreamEventStreamAsAnthropicParsesThinkingBeforeImmediateText(t *testing.T) {
+	stream := bytes.NewBuffer(nil)
+	_, _ = stream.Write(buildEventStreamFrame(t, "assistantResponseEvent", map[string]any{
+		"assistantResponseEvent": map[string]any{
+			"content": "<thinking> out.</thinking>分析过程：最终 500",
+		},
+	}))
+
+	var out bytes.Buffer
+	result, err := StreamEventStreamAsAnthropicWithContext(context.Background(), stream, &out, "claude-opus-4-7", 9, KiroRequestContext{ThinkingEnabled: true})
+	require.NoError(t, err)
+	require.Equal(t, "end_turn", result.StopReason)
+
+	output := out.String()
+	require.Contains(t, output, `"thinking":" out."`)
+	require.Contains(t, output, `"text":"分析过程："`)
+	require.Contains(t, output, `"text":"最终 500"`)
+	require.Equal(t, 1, strings.Count(output, `"type":"signature_delta"`))
+	require.NotContains(t, output, "<thinking>")
+	require.NotContains(t, output, `\u003cthinking`)
+	require.NotContains(t, output, `\u003c/thinking`)
 }
 
 func TestStreamEventStreamAsAnthropicIgnoresReasoningContentWhenThinkingDisabled(t *testing.T) {

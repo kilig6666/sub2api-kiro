@@ -462,9 +462,12 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 	stopSequencePendingText := ""
 	maxOutputStopped := false
 	thinkingBuffer := ""
+	var currentThinking strings.Builder
 	inThinkingBlock := false
 	stripThinkingLeadingNewline := false
+	pendingThinkingEnd := false
 	sawNonThinkingBlock := false
+	currentMessageID := ""
 	var outputTextBuf strings.Builder
 
 	writeEvent := func(event string, data any) error {
@@ -483,6 +486,7 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 		if requestCtx.CacheEmulationUsage != nil {
 			startUsage = mergeKiroCacheEmulationUsage(startUsage, requestCtx.CacheEmulationUsage)
 		}
+		useMsgID := newClaudeMessageID()
 		usageMap := map[string]any{
 			"input_tokens":  startUsage.InputTokens,
 			"output_tokens": 0,
@@ -491,7 +495,7 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 		if err := writeEvent("message_start", map[string]any{
 			"type": "message_start",
 			"message": map[string]any{
-				"id":            newClaudeMessageID(),
+				"id":            useMsgID,
 				"type":          "message",
 				"role":          "assistant",
 				"content":       []any{},
@@ -504,6 +508,9 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 			return err
 		}
 		messageStartSent = true
+		if currentMessageID == "" {
+			currentMessageID = useMsgID
+		}
 		return nil
 	}
 
@@ -862,8 +869,9 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 			"type":  "content_block_start",
 			"index": thinkingBlockIndex,
 			"content_block": map[string]any{
-				"type":     "thinking",
-				"thinking": "",
+				"type":      "thinking",
+				"thinking":  "",
+				"signature": "",
 			},
 		})
 	}
@@ -875,6 +883,7 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 		}
 		if text != "" {
 			outputTextBuf.WriteString(text)
+			currentThinking.WriteString(text)
 		}
 		return writeEvent("content_block_delta", map[string]any{
 			"type":  "content_block_delta",
@@ -886,8 +895,19 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 		})
 	}
 	finishThinkingBlock := func() error {
-		if err := emitThinkingDelta(""); err != nil {
-			return err
+		sig := thinkingSignature(currentThinking.String(), model, currentMessageID)
+		currentThinking.Reset()
+		if sig != "" {
+			if err := writeEvent("content_block_delta", map[string]any{
+				"type":  "content_block_delta",
+				"index": thinkingBlockIndex,
+				"delta": map[string]any{
+					"type":      "signature_delta",
+					"signature": sig,
+				},
+			}); err != nil {
+				return err
+			}
 		}
 		return closeThinking()
 	}
@@ -897,6 +917,31 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 		}
 		thinkingBuffer += text
 		for {
+			if pendingThinkingEnd {
+				if thinkingBuffer == "" {
+					break
+				}
+				if thinkingBuffer == "\n" {
+					break
+				}
+				if strings.HasPrefix(thinkingBuffer, thinkingStartTag) {
+					pendingThinkingEnd = false
+					inThinkingBlock = true
+					stripThinkingLeadingNewline = true
+					thinkingBuffer = thinkingBuffer[len(thinkingStartTag):]
+					continue
+				}
+				if len(thinkingBuffer) < len(thinkingStartTag) && strings.HasPrefix(thinkingStartTag, thinkingBuffer) {
+					break
+				}
+				pendingThinkingEnd = false
+				if err := finishThinkingBlock(); err != nil {
+					return err
+				}
+				if strings.HasPrefix(thinkingBuffer, "\n\n") {
+					thinkingBuffer = thinkingBuffer[len("\n\n"):]
+				}
+			}
 			if !inThinkingBlock {
 				startPos := findRealThinkingStartTag(thinkingBuffer, 0)
 				if startPos != -1 {
@@ -934,18 +979,33 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 					stripThinkingLeadingNewline = false
 				}
 			}
-			endPos := findStreamThinkingEndTagStrict(thinkingBuffer, 0)
+			endPos := findRealThinkingEndTag(thinkingBuffer, 0)
 			if endPos != -1 {
 				if thinkingText := thinkingBuffer[:endPos]; thinkingText != "" {
 					if err := emitThinkingDelta(thinkingText); err != nil {
 						return err
 					}
 				}
+				afterPos := endPos + len(thinkingEndTag)
+				if strings.HasPrefix(thinkingBuffer[afterPos:], thinkingStartTag) {
+					thinkingBuffer = thinkingBuffer[afterPos+len(thinkingStartTag):]
+					stripThinkingLeadingNewline = true
+					continue
+				}
+				rest := thinkingBuffer[afterPos:]
+				if rest == "" || rest == "\n" || (len(rest) < len(thinkingStartTag) && strings.HasPrefix(thinkingStartTag, rest)) {
+					thinkingBuffer = rest
+					inThinkingBlock = false
+					pendingThinkingEnd = true
+					break
+				}
+				trailingLen := streamThinkingEndTagTrailingLen(thinkingBuffer, endPos)
+				afterPos += trailingLen
+				thinkingBuffer = thinkingBuffer[afterPos:]
 				inThinkingBlock = false
 				if err := finishThinkingBlock(); err != nil {
 					return err
 				}
-				thinkingBuffer = thinkingBuffer[endPos+len(thinkingEndTag)+len("\n\n"):]
 				continue
 			}
 			safeLen := safeThinkingStreamFlushLen(thinkingBuffer, len(thinkingEndTag)+len("\n\n"))
@@ -961,7 +1021,20 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 	}
 	flushThinkingAtBoundary := func() error {
 		if !requestCtx.ThinkingEnabled || thinkingBuffer == "" {
+			if pendingThinkingEnd {
+				pendingThinkingEnd = false
+				return finishThinkingBlock()
+			}
 			return nil
+		}
+		if pendingThinkingEnd {
+			pendingThinkingEnd = false
+			remaining := thinkingBuffer
+			thinkingBuffer = ""
+			if err := finishThinkingBlock(); err != nil {
+				return err
+			}
+			return emitPlainAssistantText(remaining)
 		}
 		if inThinkingBlock {
 			endPos := findStreamThinkingEndTagAtBufferEnd(thinkingBuffer, 0)
@@ -1107,9 +1180,8 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 		return nil, err
 	}
 	if requestCtx.ThinkingEnabled && thinkingBlockIndex != -1 && !sawNonThinkingBlock {
-		stopReason = "max_tokens"
-		if err := emitTextDelta(" ", true); err != nil {
-			return nil, err
+		if stopReason == "" {
+			stopReason = "end_turn"
 		}
 	}
 
@@ -1145,12 +1217,8 @@ func StreamEventStreamAsAnthropicWithContext(ctx context.Context, body io.Reader
 		return nil, err
 	}
 	finalUsageMap := map[string]any{
-		"input_tokens":                usage.InputTokens,
-		"output_tokens":               usage.OutputTokens,
-		"cache_read_input_tokens":     usage.CacheReadInputTokens,
-		"cache_creation_input_tokens": usage.CacheCreationInputTokens,
+		"output_tokens": usage.OutputTokens,
 	}
-	addKiroCacheUsageFields(finalUsageMap, usage)
 	if err := writeEvent("message_delta", map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
@@ -1683,7 +1751,15 @@ func compactKiroToolResultText(text string, isError bool) string {
 }
 
 func newClaudeMessageID() string {
-	return "msg_01" + randomBase62(22)
+	return "msg_01" + randomBase62(25)
+}
+
+func newClaudeRequestID() string {
+	return "req_01" + randomBase62(25)
+}
+
+func NewClaudeRequestID() string {
+	return newClaudeRequestID()
 }
 
 func randomBase62(n int) string {
@@ -2804,7 +2880,8 @@ func parseEventStream(body io.Reader) (string, []KiroToolUse, Usage, string, err
 
 func buildClaudeResponse(content string, toolUses []KiroToolUse, model string, usage Usage, stopReason string, requestCtx KiroRequestContext) []byte {
 	var blocks []map[string]interface{}
-	blocks = append(blocks, extractThinkingBlocks(content)...)
+	msgID := newClaudeMessageID()
+	blocks = append(blocks, extractThinkingBlocks(content, model, msgID)...)
 	stopSequence := ""
 	if len(toolUses) == 0 {
 		if nextBlocks, matched := applyStopSequencesToTextBlocks(blocks, requestCtx.StopSequences); matched != "" {
@@ -2848,7 +2925,7 @@ func buildClaudeResponse(content string, toolUses []KiroToolUse, model string, u
 	pureThinking := hasThinkingBlocksOnly(blocks) && usableTools == 0
 	if pureThinking {
 		blocks = append(blocks, map[string]interface{}{"type": "text", "text": ""})
-		stopReason = "max_tokens"
+		stopReason = "end_turn"
 	}
 	if len(blocks) == 0 {
 		blocks = append(blocks, map[string]interface{}{"type": "text", "text": ""})
@@ -2861,7 +2938,7 @@ func buildClaudeResponse(content string, toolUses []KiroToolUse, model string, u
 		}
 	}
 	response := map[string]interface{}{
-		"id":          newClaudeMessageID(),
+		"id":          msgID,
 		"type":        "message",
 		"role":        "assistant",
 		"model":       model,
@@ -3005,18 +3082,14 @@ func stopSequencePotentialSuffix(text string, stopSequences []string) string {
 
 func buildKiroClaudeUsageMap(usage Usage) map[string]interface{} {
 	usageMap := map[string]interface{}{
-		"input_tokens":            usage.InputTokens,
-		"output_tokens":           usage.OutputTokens,
-		"cache_read_input_tokens": usage.CacheReadInputTokens,
-	}
-	if usage.CacheCreationInputTokens > 0 {
-		usageMap["cache_creation_input_tokens"] = usage.CacheCreationInputTokens
-	}
-	if usage.CacheCreation5mInputTokens > 0 || usage.CacheCreation1hInputTokens > 0 {
-		usageMap["cache_creation"] = map[string]interface{}{
+		"input_tokens":                usage.InputTokens,
+		"output_tokens":               usage.OutputTokens,
+		"cache_read_input_tokens":     usage.CacheReadInputTokens,
+		"cache_creation_input_tokens": usage.CacheCreationInputTokens,
+		"cache_creation": map[string]interface{}{
 			"ephemeral_5m_input_tokens": usage.CacheCreation5mInputTokens,
 			"ephemeral_1h_input_tokens": usage.CacheCreation1hInputTokens,
-		}
+		},
 	}
 	return usageMap
 }
@@ -3072,7 +3145,7 @@ func hasThinkingBlocksOnly(blocks []map[string]interface{}) bool {
 	return hasThinking
 }
 
-func extractThinkingBlocks(content string) []map[string]interface{} {
+func extractThinkingBlocks(content, model, msgID string) []map[string]interface{} {
 	if content == "" {
 		return nil
 	}
@@ -3080,38 +3153,52 @@ func extractThinkingBlocks(content string) []map[string]interface{} {
 		return []map[string]interface{}{{"type": "text", "text": content}}
 	}
 	var blocks []map[string]interface{}
-	pos := 0
-	for pos < len(content) {
-		start := findRealThinkingStartTag(content, pos)
-		if start == -1 {
-			if text := content[pos:]; strings.TrimSpace(text) != "" {
-				blocks = append(blocks, map[string]interface{}{"type": "text", "text": text})
-			}
-			break
-		}
-		end := findRealThinkingEndTag(content, start+len(thinkingStartTag))
-		if end == -1 {
-			if text := content[pos:]; strings.TrimSpace(text) != "" {
-				blocks = append(blocks, map[string]interface{}{"type": "text", "text": text})
-			}
-			break
-		}
-		if text := content[pos:start]; strings.TrimSpace(text) != "" {
-			blocks = append(blocks, map[string]interface{}{"type": "text", "text": text})
-		}
-		thinking := strings.TrimPrefix(content[start+len(thinkingStartTag):end], "\n")
+	var pendingThinking strings.Builder
+	flushThinking := func() {
+		thinking := pendingThinking.String()
 		if strings.TrimSpace(thinking) != "" {
 			blocks = append(blocks, map[string]interface{}{
 				"type":      "thinking",
 				"thinking":  thinking,
-				"signature": thinkingSignature(thinking),
+				"signature": thinkingSignature(thinking, model, msgID),
 			})
+		}
+		pendingThinking.Reset()
+	}
+	appendText := func(text string) {
+		if strings.TrimSpace(text) != "" {
+			blocks = append(blocks, map[string]interface{}{"type": "text", "text": text})
+		}
+	}
+	pos := 0
+	for pos < len(content) {
+		start := findRealThinkingStartTag(content, pos)
+		if start == -1 {
+			flushThinking()
+			appendText(content[pos:])
+			break
+		}
+		end := findRealThinkingEndTag(content, start+len(thinkingStartTag))
+		if end == -1 {
+			flushThinking()
+			appendText(content[pos:])
+			break
+		}
+		if text := content[pos:start]; strings.TrimSpace(text) != "" {
+			flushThinking()
+			appendText(text)
+		}
+		thinking := strings.TrimPrefix(content[start+len(thinkingStartTag):end], "\n")
+		if strings.TrimSpace(thinking) != "" {
+			pendingThinking.WriteString(thinking)
 		}
 		pos = end + len(thinkingEndTag)
 		if strings.HasPrefix(content[pos:], "\n\n") {
 			pos += len("\n\n")
+			flushThinking()
 		}
 	}
+	flushThinking()
 	if len(blocks) == 0 {
 		blocks = append(blocks, map[string]interface{}{"type": "text", "text": ""})
 	}
@@ -3123,33 +3210,7 @@ func findRealThinkingStartTag(content string, from int) int {
 }
 
 func findRealThinkingEndTag(content string, from int) int {
-	searchFrom := from
-	for {
-		pos := findRealThinkingTag(content, thinkingEndTag, searchFrom, true)
-		if pos == -1 {
-			return -1
-		}
-		after := pos + len(thinkingEndTag)
-		if strings.HasPrefix(content[after:], "\n\n") || strings.TrimSpace(content[after:]) == "" {
-			return pos
-		}
-		searchFrom = pos + 1
-	}
-}
-
-func findStreamThinkingEndTagStrict(content string, from int) int {
-	searchFrom := from
-	for {
-		pos := findRealThinkingTag(content, thinkingEndTag, searchFrom, true)
-		if pos == -1 {
-			return -1
-		}
-		after := pos + len(thinkingEndTag)
-		if strings.HasPrefix(content[after:], "\n\n") {
-			return pos
-		}
-		searchFrom = pos + 1
-	}
+	return findRealThinkingTag(content, thinkingEndTag, from, true)
 }
 
 func findStreamThinkingEndTagAtBufferEnd(content string, from int) int {
@@ -3165,6 +3226,14 @@ func findStreamThinkingEndTagAtBufferEnd(content string, from int) int {
 		}
 		searchFrom = pos + 1
 	}
+}
+
+func streamThinkingEndTagTrailingLen(content string, endPos int) int {
+	after := endPos + len(thinkingEndTag)
+	if after <= len(content) && strings.HasPrefix(content[after:], "\n\n") {
+		return len("\n\n")
+	}
+	return 0
 }
 
 func safeThinkingStreamFlushLen(content string, keepBytes int) int {
@@ -3243,10 +3312,6 @@ func isInsideMarkdownFence(content string, pos int) bool {
 func isLineBlockQuote(content string, pos int) bool {
 	lineStart := strings.LastIndexByte(content[:pos], '\n') + 1
 	return strings.HasPrefix(strings.TrimLeftFunc(content[lineStart:pos], unicode.IsSpace), ">")
-}
-
-func thinkingSignature(content string) string {
-	return ""
 }
 
 func readEventStreamMessage(reader *bufio.Reader) (*eventStreamMessage, error) {
@@ -4022,12 +4087,8 @@ func mergeKiroCacheEmulationUsage(base Usage, simulated *Usage) Usage {
 }
 
 func addKiroCacheUsageFields(usageMap map[string]any, usage Usage) {
-	if usage.CacheCreationInputTokens > 0 {
-		usageMap["cache_creation_input_tokens"] = usage.CacheCreationInputTokens
-	}
-	if usage.CacheReadInputTokens > 0 {
-		usageMap["cache_read_input_tokens"] = usage.CacheReadInputTokens
-	}
+	usageMap["cache_creation_input_tokens"] = usage.CacheCreationInputTokens
+	usageMap["cache_read_input_tokens"] = usage.CacheReadInputTokens
 	if usage.CacheCreation5mInputTokens > 0 || usage.CacheCreation1hInputTokens > 0 {
 		usageMap["cache_creation"] = map[string]any{
 			"ephemeral_5m_input_tokens": usage.CacheCreation5mInputTokens,
