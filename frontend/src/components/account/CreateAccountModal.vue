@@ -160,6 +160,19 @@
             <Icon name="sparkles" size="sm" />
             Kiro
           </button>
+          <button
+            type="button"
+            @click="form.platform = 'windsurf'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'windsurf'
+                ? 'bg-white text-teal-700 shadow-sm dark:bg-dark-600 dark:text-teal-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="globe" size="sm" />
+            Windsurf
+          </button>
         </div>
       </div>
 
@@ -838,6 +851,129 @@
         </div>
       </div>
 
+      <!-- Windsurf account type selection (Level 1) -->
+      <div v-if="form.platform === 'windsurf'">
+        <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
+        <div class="mt-2 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            @click="accountCategory = 'oauth-based'; windsurfAuthMethod = 'oauth'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              accountCategory === 'oauth-based'
+                ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                : 'border-gray-200 hover:border-amber-300 dark:border-dark-600 dark:hover:border-amber-700'
+            ]"
+          >
+            <div :class="['flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', accountCategory === 'oauth-based' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400']">
+              <Icon name="key" size="sm" />
+            </div>
+            <div class="min-w-0">
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">
+                {{ t('admin.accounts.types.oauth') }}
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.types.windsurfOauth') }}
+              </span>
+            </div>
+          </button>
+          <button
+            type="button"
+            @click="accountCategory = 'apikey'; windsurfAuthMethod = 'apikey'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              accountCategory === 'apikey'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : 'border-gray-200 hover:border-purple-300 dark:border-dark-600 dark:hover:border-purple-700'
+            ]"
+          >
+            <div :class="['flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', accountCategory === 'apikey' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400']">
+              <Icon name="cloud" size="sm" />
+            </div>
+            <div class="min-w-0">
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">
+                API Key
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.types.windsurfApikey') }}
+              </span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Windsurf OAuth auth method selection (Level 2) -->
+      <div v-if="form.platform === 'windsurf' && accountCategory === 'oauth-based'">
+        <label class="input-label">{{ t('admin.accounts.windsurf.authModeTitle') }}</label>
+        <div class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <button
+            type="button"
+            @click="windsurfAuthMethod = 'oauth'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              windsurfAuthMethod === 'oauth'
+                ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                : 'border-gray-200 hover:border-amber-300 dark:border-dark-600 dark:hover:border-amber-700'
+            ]"
+          >
+            <div :class="['flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', windsurfAuthMethod === 'oauth' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400']">
+              <Icon name="key" size="sm" />
+            </div>
+            <div class="min-w-0">
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.windsurf.oauthTitle') }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.windsurf.oauthDesc') }}</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            @click="windsurfAuthMethod = 'password'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              windsurfAuthMethod === 'password'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : 'border-gray-200 hover:border-purple-300 dark:border-dark-600 dark:hover:border-purple-700'
+            ]"
+          >
+            <div :class="['flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', windsurfAuthMethod === 'password' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400']">
+              <Icon name="mail" size="sm" />
+            </div>
+            <div class="min-w-0">
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.windsurf.passwordTitle') }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.windsurf.passwordDesc') }}</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            @click="windsurfAuthMethod = 'token'"
+            :class="[
+              'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+              windsurfAuthMethod === 'token'
+                ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20'
+                : 'border-gray-200 hover:border-teal-300 dark:border-dark-600 dark:hover:border-teal-700'
+            ]"
+          >
+            <div :class="['flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', windsurfAuthMethod === 'token' ? 'bg-teal-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400']">
+              <Icon name="terminal" size="sm" />
+            </div>
+            <div class="min-w-0">
+              <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.windsurf.tokenTitle') }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.windsurf.tokenDesc') }}</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Windsurf API Key input -->
+      <div v-if="form.platform === 'windsurf' && windsurfAuthMethod === 'apikey'" class="space-y-4">
+        <div>
+          <label class="input-label">API Key</label>
+          <input v-model="windsurfApiKey" type="text" class="input" placeholder="devin-session-token$eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW..." />
+        </div>
+      </div>
+
+
+
+
       <!-- Kiro OAuth auth mode selection -->
       <div v-if="form.platform === 'kiro' && accountCategory === 'oauth-based'">
         <label class="input-label">{{ t('admin.accounts.oauth.kiro.authModeTitle') }}</label>
@@ -1260,6 +1396,70 @@
         </div>
       </div>
 
+      <!-- Windsurf model mapping -->
+      <div v-if="form.platform === 'windsurf'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
+        <div>
+          <div class="mb-3 rounded-lg bg-teal-50 p-3 dark:bg-teal-900/20">
+            <p class="text-xs text-teal-700 dark:text-teal-400">
+              {{ t('admin.accounts.mapRequestModels') }}
+            </p>
+          </div>
+
+          <div v-if="windsurfModelMappings.length > 0" class="mb-3 space-y-2">
+            <div
+              v-for="(mapping, index) in windsurfModelMappings"
+              :key="`ws-mapping-${index}`"
+              class="space-y-1"
+            >
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="mapping.from"
+                  type="text"
+                  :class="['input flex-1', !isValidWildcardPattern(mapping.from) ? 'border-red-500 dark:border-red-500' : '']"
+                  :placeholder="t('admin.accounts.requestModel')"
+                />
+                <svg class="h-4 w-4 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+                <input
+                  v-model="mapping.to"
+                  type="text"
+                  :class="['input flex-1', mapping.to.includes('*') ? 'border-red-500 dark:border-red-500' : '']"
+                  :placeholder="t('admin.accounts.actualModel')"
+                />
+                <button
+                  type="button"
+                  @click="windsurfModelMappings.splice(index, 1)"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                >
+                  <Icon name="x" size="sm" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" @click="windsurfModelMappings.push({ from: '', to: '' })" class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300">
+            <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            {{ t('admin.accounts.addMapping') }}
+          </button>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="preset in windsurfPresets"
+              :key="preset.label"
+              type="button"
+              @click="addWindsurfPresetMapping(preset.from, preset.to)"
+              :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
+            >
+              + {{ preset.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Upstream config (only for Antigravity upstream type) -->
       <div v-if="form.platform === 'antigravity' && antigravityAccountType === 'upstream'" class="space-y-4">
         <div>
@@ -1495,7 +1695,7 @@
       </div>
 
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
-      <div v-if="form.type === 'apikey' && form.platform !== 'antigravity' && form.platform !== 'kiro'" class="space-y-4">
+      <div v-if="form.type === 'apikey' && form.platform !== 'antigravity' && form.platform !== 'kiro' && form.platform !== 'windsurf'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -2445,9 +2645,9 @@
                     class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
                   >
                     <Icon name="x" size="sm" :stroke-width="2" />
-                  </button>
-                </div>
-              </div>
+          </button>
+        </div>
+      </div>
 
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
@@ -2925,7 +3125,10 @@
       </div>
 
       <div>
-        <label class="input-label">{{ t('admin.accounts.proxy') }}</label>
+        <div class="mb-1 flex items-center gap-2">
+          <label class="input-label mb-0">{{ t('admin.accounts.proxy') }}</label>
+          <ProxyAdBanner />
+        </div>
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
 
@@ -3182,7 +3385,7 @@
               </button>
             </div>
           </div>
-          <button type="button" @click="addOpenAICompactModelMapping" class="btn btn-secondary text-sm">
+          <button type="button" @click="addOpenAICompactModelMapping" class="mt-3 btn btn-secondary text-sm">
             + {{ t('admin.accounts.addMapping') }}
           </button>
         </div>
@@ -3268,7 +3471,7 @@
             </div>
           </div>
         </div>
-        <div v-if="form.platform === 'antigravity'" class="mt-3 flex items-center gap-2">
+        <div v-if="form.platform === 'antigravity'" class="mb-4 mt-3 flex items-center gap-2">
           <label class="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
@@ -3311,17 +3514,7 @@
 
     <!-- Step 2: OAuth Authorization -->
     <div v-else class="space-y-5">
-      <div v-if="isKiroBatchImportMode" class="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-700 dark:bg-emerald-900/20">
-        <div>
-          <label class="input-label">{{ t('admin.accounts.oauth.kiro.batchImportJsonLabel') }}</label>
-          <textarea v-model="kiroBatchImportJson" rows="12" class="input font-mono text-xs" placeholder='{"clientId":"","clientSecret":"","accessToken":"...","refreshToken":"...","provider":"Google"}'></textarea>
-          <p class="input-hint">{{ t('admin.accounts.oauth.kiro.batchImportHint') }}</p>
-        </div>
-        <div v-if="kiroBatchImportError" class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30">
-          <p class="whitespace-pre-line text-sm text-red-600 dark:text-red-400">{{ kiroBatchImportError }}</p>
-        </div>
-      </div>
-      <div v-else-if="isKiroImportMode" class="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+      <div v-if="isKiroImportMode" class="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
         <div>
           <label class="input-label">{{ t('admin.accounts.oauth.kiro.tokenJsonLabel') }}</label>
           <textarea v-model="kiroTokenJson" rows="8" class="input font-mono text-xs" placeholder='{"accessToken":"...","refreshToken":"..."}'></textarea>
@@ -3334,6 +3527,30 @@
         </div>
         <div v-if="currentOAuthError" class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30">
           <p class="whitespace-pre-line text-sm text-red-600 dark:text-red-400">{{ currentOAuthError }}</p>
+        </div>
+      </div>
+      <div v-else-if="isWindsurfDirectMode" class="space-y-4">
+        <!-- Windsurf Email/Password -->
+        <div v-if="windsurfAuthMethod === 'password'" class="space-y-4 rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-700 dark:bg-purple-900/20">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.windsurf.email') }}</label>
+            <input v-model="windsurfEmail" type="email" class="input" placeholder="user@example.com" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.windsurf.password') }}</label>
+            <input v-model="windsurfPassword" type="password" class="input" />
+          </div>
+        </div>
+        <!-- Windsurf Token -->
+        <div v-if="windsurfAuthMethod === 'token'" class="space-y-4 rounded-lg border border-teal-200 bg-teal-50 p-4 dark:border-teal-700 dark:bg-teal-900/20">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.windsurf.tokenLabel') }}</label>
+            <input v-model="windsurfToken" type="text" class="input font-mono" placeholder="ott$..." />
+            <p class="input-hint">{{ t('admin.accounts.windsurf.tokenHint') }}</p>
+          </div>
+        </div>
+        <div v-if="windsurfOAuthError" class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30">
+          <p class="whitespace-pre-line text-sm text-red-600 dark:text-red-400">{{ windsurfOAuthError }}</p>
         </div>
       </div>
       <OAuthAuthorizationFlow
@@ -3411,22 +3628,22 @@
           {{ t('common.back') }}
         </button>
         <button
-          v-if="isKiroBatchImportMode"
-          type="button"
-          :disabled="submitting || !kiroBatchImportJson.trim()"
-          class="btn btn-primary"
-          @click="handleKiroBatchImport"
-        >
-          {{ submitting ? t('admin.accounts.creating') : t('admin.accounts.oauth.kiro.batchImportCreate') }}
-        </button>
-        <button
-          v-else-if="isKiroImportMode"
+          v-if="isKiroImportMode"
           type="button"
           :disabled="currentOAuthLoading || !kiroTokenJson.trim()"
           class="btn btn-primary"
           @click="handleKiroImport"
         >
           {{ currentOAuthLoading ? t('admin.accounts.creating') : t('common.create') }}
+        </button>
+        <button
+          v-else-if="isWindsurfDirectMode"
+          type="button"
+          :disabled="windsurfOAuthLoading || (windsurfAuthMethod === 'password' ? (!windsurfEmail.trim() || !windsurfPassword.trim()) : !windsurfToken.trim())"
+          class="btn btn-primary"
+          @click="handleWindsurfDirectSubmit"
+        >
+          {{ windsurfOAuthLoading ? t('admin.accounts.creating') : t('common.create') }}
         </button>
         <button
           v-else-if="isManualInputMethod"
@@ -3738,6 +3955,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
+import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
@@ -3778,10 +3996,15 @@ const oauthStepTitle = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.oauth.openai.title')
   if (form.platform === 'gemini') return t('admin.accounts.oauth.gemini.title')
   if (form.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.title')
+  if (form.platform === 'windsurf') {
+    if (windsurfAuthMethod.value === 'token') return t('admin.accounts.windsurf.tokenTitle')
+    if (windsurfAuthMethod.value === 'oauth') return t('admin.accounts.oauth.windsurf.title')
+    return t('admin.accounts.windsurf.passwordTitle')
+  }
   if (form.platform === 'kiro') {
-    if (kiroAccountType.value === 'import') return t('admin.accounts.oauth.kiro.importDialogTitle')
-    if (kiroAccountType.value === 'batch_import') return t('admin.accounts.oauth.kiro.batchImportDialogTitle')
-    return t('admin.accounts.oauth.kiro.title')
+    return kiroAccountType.value === 'import'
+      ? t('admin.accounts.oauth.kiro.importDialogTitle')
+      : t('admin.accounts.oauth.kiro.title')
   }
   return t('admin.accounts.oauth.title')
 })
@@ -3828,6 +4051,7 @@ const currentAuthUrl = computed(() => {
   if (form.platform === 'gemini') return geminiOAuth.authUrl.value
   if (form.platform === 'antigravity') return antigravityOAuth.authUrl.value
   if (form.platform === 'kiro') return kiroOAuth.authUrl.value
+  if (form.platform === 'windsurf') return windsurfOAuthUrl.value
   return oauth.authUrl.value
 })
 
@@ -3836,6 +4060,7 @@ const currentSessionId = computed(() => {
   if (form.platform === 'gemini') return geminiOAuth.sessionId.value
   if (form.platform === 'antigravity') return antigravityOAuth.sessionId.value
   if (form.platform === 'kiro') return kiroOAuth.sessionId.value
+  if (form.platform === 'windsurf') return windsurfOAuthSessionId.value
   return oauth.sessionId.value
 })
 
@@ -3844,6 +4069,7 @@ const currentOAuthLoading = computed(() => {
   if (form.platform === 'gemini') return geminiOAuth.loading.value
   if (form.platform === 'antigravity') return antigravityOAuth.loading.value
   if (form.platform === 'kiro') return kiroOAuth.loading.value
+  if (form.platform === 'windsurf') return windsurfOAuthLoading.value
   return oauth.loading.value
 })
 
@@ -3852,6 +4078,7 @@ const currentOAuthError = computed(() => {
   if (form.platform === 'gemini') return geminiOAuth.error.value
   if (form.platform === 'antigravity') return antigravityOAuth.error.value
   if (form.platform === 'kiro') return kiroOAuth.error.value
+  if (form.platform === 'windsurf') return windsurfOAuthError.value
   return oauth.error.value
 })
 
@@ -3936,12 +4163,23 @@ const kiroAccountType = ref<'oauth' | 'idc' | 'import' | 'batch_import'>('oauth'
 const kiroOAuthProvider = ref<'google' | 'github'>('google')
 const kiroIDCStartUrl = ref('https://view.awsapps.com/start')
 const kiroIDCRegion = ref('us-east-1')
+
+// Windsurf
+const windsurfAuthMethod = ref<'apikey' | 'password' | 'token' | 'oauth'>('oauth')
+const windsurfApiKey = ref('')
+const windsurfEmail = ref('')
+const windsurfPassword = ref('')
+const windsurfToken = ref('')
+const windsurfOAuthLoading = ref(false)
+const windsurfOAuthUrl = ref('')
+const windsurfOAuthError = ref('')
+const windsurfOAuthSessionId = ref('')
 const kiroTokenJson = ref('')
 const kiroDeviceRegistrationJson = ref('')
-const kiroBatchImportJson = ref('')
-const kiroBatchImportError = ref('')
 const kiroModelMappings = ref<ModelMapping[]>([])
 const kiroPresetMappings = computed(() => getPresetMappingsByPlatform('kiro'))
+const windsurfModelMappings = ref<ModelMapping[]>([])
+const windsurfPresets = computed(() => getPresetMappingsByPlatform('windsurf'))
 const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
 
 // Bedrock credentials
@@ -4151,11 +4389,16 @@ const isOAuthFlow = computed(() => {
   if (form.platform === 'anthropic' && accountCategory.value === 'bedrock') {
     return false
   }
+  // Windsurf API Key 不需要 step 2，OAuth 走 step 2
+  if (form.platform === 'windsurf' && accountCategory.value !== 'oauth-based') {
+    return false
+  }
   return accountCategory.value === 'oauth-based'
 })
 
 const isKiroImportMode = computed(() => form.platform === 'kiro' && kiroAccountType.value === 'import')
-const isKiroBatchImportMode = computed(() => form.platform === 'kiro' && kiroAccountType.value === 'batch_import')
+
+const isWindsurfDirectMode = computed(() => form.platform === 'windsurf' && accountCategory.value === 'oauth-based' && windsurfAuthMethod.value !== 'oauth')
 
 const isManualInputMethod = computed(() => {
   return oauthFlowRef.value?.inputMethod === 'manual'
@@ -4181,6 +4424,9 @@ const canExchangeCode = computed(() => {
   }
   if (form.platform === 'kiro') {
     return authCode.trim() && kiroOAuth.sessionId.value && !kiroOAuth.loading.value
+  }
+  if (form.platform === 'windsurf') {
+    return authCode.trim() && !windsurfOAuthLoading.value
   }
   return authCode.trim() && oauth.sessionId.value && !oauth.loading.value
 })
@@ -4280,7 +4526,6 @@ watch(
       accountCategory.value = 'oauth-based'
       kiroAccountType.value = 'oauth'
       kiroOAuthProvider.value = 'google'
-      kiroBatchImportError.value = ''
       apiKeyBaseUrl.value = ''
       apiKeyValue.value = ''
     } else {
@@ -4329,6 +4574,9 @@ watch(
     geminiOAuth.resetState()
     antigravityOAuth.resetState()
     kiroOAuth.resetState()
+    windsurfOAuthUrl.value = ''
+    windsurfOAuthError.value = ''
+    windsurfOAuthSessionId.value = ''
   }
 )
 
@@ -4445,6 +4693,62 @@ const addKiroPresetMapping = (from: string, to: string) => {
   }
   kiroModelMappings.value.push({ from, to })
 }
+
+const addWindsurfPresetMapping = (from: string, to: string) => {
+  if (windsurfModelMappings.value.some((m) => m.from === from)) {
+    appStore.showInfo(t('admin.accounts.mappingExists', { model: from }))
+    return
+  }
+  windsurfModelMappings.value.push({ from, to })
+}
+
+const startWindsurfOAuth = async () => {
+  windsurfOAuthLoading.value = true
+  windsurfOAuthUrl.value = ''
+  try {
+    const { generateOAuthURL } = await import('@/api/admin/windsurf')
+    const state = crypto.randomUUID()
+    const result = await generateOAuthURL({ state })
+    windsurfOAuthUrl.value = result.authorize_url
+    windsurfOAuthSessionId.value = result.state
+    window.open(result.authorize_url, '_blank')
+  } catch (e: any) {
+    windsurfOAuthError.value = e?.response?.data?.message || e?.message || 'OAuth URL 生成失败'
+    appStore.showError(windsurfOAuthError.value)
+  } finally {
+    windsurfOAuthLoading.value = false
+  }
+}
+
+const handleWindsurfGenerateUrl = async () => {
+  windsurfOAuthError.value = ''
+  await startWindsurfOAuth()
+}
+
+const handleWindsurfExchange = async (authCode: string) => {
+  if (!authCode.trim()) return
+  windsurfOAuthLoading.value = true
+  windsurfOAuthError.value = ''
+  try {
+    const { importToken } = await import('@/api/admin/windsurf')
+    const creds = await importToken({
+      name: form.name.trim(),
+      token: authCode.trim(),
+    })
+    const credentials: Record<string, unknown> = { ...creds }
+    const modelMapping = buildModelMappingObject('mapping', [], windsurfModelMappings.value)
+    if (modelMapping) {
+      credentials.model_mapping = modelMapping
+    }
+    await createAccountAndFinish('windsurf', 'oauth', credentials)
+  } catch (e: any) {
+    windsurfOAuthError.value = e?.response?.data?.message || e?.message || 'Token 兑换失败'
+    appStore.showError(windsurfOAuthError.value)
+  } finally {
+    windsurfOAuthLoading.value = false
+  }
+}
+
 
 // Error code warning dialog state
 const showErrorCodeWarning = ref(false)
@@ -4739,8 +5043,6 @@ const resetForm = () => {
   kiroIDCRegion.value = 'us-east-1'
   kiroTokenJson.value = ''
   kiroDeviceRegistrationJson.value = ''
-  kiroBatchImportJson.value = ''
-  kiroBatchImportError.value = ''
   fetchKiroDefaultMappings().then(mappings => {
     kiroModelMappings.value = [...mappings]
   })
@@ -4798,6 +5100,9 @@ const resetForm = () => {
   geminiOAuth.resetState()
   antigravityOAuth.resetState()
   kiroOAuth.resetState()
+  windsurfOAuthUrl.value = ''
+  windsurfOAuthError.value = ''
+  windsurfOAuthSessionId.value = ''
   oauthFlowRef.value?.reset()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
@@ -5151,6 +5456,34 @@ const handleSubmit = async () => {
     return
   }
 
+  // For Windsurf API Key, handle directly in step 1
+  if (form.platform === 'windsurf' && windsurfAuthMethod.value === 'apikey') {
+    if (!form.name.trim()) {
+      appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+      return
+    }
+    if (!windsurfApiKey.value.trim()) {
+      appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
+      return
+    }
+    try {
+      const { importAPIKey } = await import('@/api/admin/windsurf')
+      const creds = await importAPIKey({
+        name: form.name.trim(),
+        api_key: windsurfApiKey.value.trim(),
+      })
+      const credentials: Record<string, unknown> = { ...creds }
+      const modelMapping = buildModelMappingObject('mapping', [], windsurfModelMappings.value)
+      if (modelMapping) {
+        credentials.model_mapping = modelMapping
+      }
+      await createAccountAndFinish('windsurf', 'apikey', credentials)
+    } catch (e: any) {
+      appStore.showError(e?.response?.data?.message || e?.message || 'Windsurf API Key 导入失败')
+    }
+    return
+  }
+
   // For apikey type, create directly
   if (!apiKeyValue.value.trim()) {
     appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
@@ -5223,6 +5556,9 @@ const goBackToBasicInfo = () => {
   geminiOAuth.resetState()
   antigravityOAuth.resetState()
   kiroOAuth.resetState()
+  windsurfOAuthUrl.value = ''
+  windsurfOAuthError.value = ''
+  windsurfOAuthSessionId.value = ''
   oauthFlowRef.value?.reset()
 }
 
@@ -5251,6 +5587,8 @@ const handleGenerateUrl = async () => {
         kiroOAuthProvider.value === 'github' ? 'Github' : 'Google'
       )
     }
+  } else if (form.platform === 'windsurf') {
+    await handleWindsurfGenerateUrl()
   } else {
     await oauth.generateAuthUrl(addMethod.value, form.proxy_id)
   }
@@ -5830,148 +6168,6 @@ const buildKiroCredentials = (tokenInfo: Parameters<typeof kiroOAuth.buildCreden
   return credentials
 }
 
-type KiroBatchImportItem = Record<string, unknown>
-
-const asKiroImportRecord = (value: unknown): KiroBatchImportItem | null => {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as KiroBatchImportItem
-    : null
-}
-
-const readKiroImportString = (source: KiroBatchImportItem, ...keys: string[]) => {
-  for (const key of keys) {
-    const value = source[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-  }
-  return ''
-}
-
-const normalizeKiroImportExpiresAt = (source: KiroBatchImportItem) => {
-  const raw = source.expiresAt ?? source.expires_at
-  if (raw == null || raw === '') return ''
-  const numberValue = typeof raw === 'number' ? raw : Number(String(raw).trim())
-  if (!Number.isFinite(numberValue) || numberValue <= 0) {
-    return typeof raw === 'string' ? raw.trim() : ''
-  }
-  return String(numberValue > 9999999999 ? Math.floor(numberValue / 1000) : Math.floor(numberValue))
-}
-
-const normalizeKiroProvider = (provider: string, authMethod: string) => {
-  const lower = provider.toLowerCase()
-  if (lower === 'github') return 'Github'
-  if (lower === 'google') return 'Google'
-  if (provider) return provider
-  return authMethod === 'idc' ? 'BuilderId' : 'Google'
-}
-
-const normalizeKiroAuthMethod = (
-  rawAuthMethod: string,
-  provider: string,
-  clientId: string,
-  clientSecret: string
-) => {
-  const authMethod = rawAuthMethod.toLowerCase()
-  if (['idc', 'builderid', 'builder_id', 'enterprise', 'iam', 'external_idp'].includes(authMethod)) return 'idc'
-  if (['social', 'google', 'github'].includes(authMethod)) return 'social'
-
-  const normalizedProvider = provider.toLowerCase()
-  if (['builderid', 'enterprise', 'internal'].includes(normalizedProvider)) return 'idc'
-  if (['google', 'github'].includes(normalizedProvider)) return 'social'
-  return clientId || clientSecret ? 'idc' : 'social'
-}
-
-const extractKiroBatchImportItems = (raw: unknown) => {
-  if (Array.isArray(raw)) {
-    return raw
-  }
-  const record = asKiroImportRecord(raw)
-  if (!record) {
-    throw new Error(t('admin.accounts.oauth.kiro.batchImportInvalidRoot'))
-  }
-  if (Array.isArray(record.accounts)) {
-    return record.accounts.map((item) => {
-      const account = asKiroImportRecord(item)
-      if (!account) return item
-      const credentials = asKiroImportRecord(account.credentials)
-      return credentials ? { ...account, ...credentials } : account
-    })
-  }
-  return [record]
-}
-
-const normalizeKiroBatchImportAccount = (
-  rawItem: unknown,
-  index: number,
-  total: number
-): { account?: CreateAccountRequest; error?: string } => {
-  const source = asKiroImportRecord(rawItem)
-  if (!source) {
-    return { error: t('admin.accounts.oauth.kiro.batchImportItemNotObject') }
-  }
-
-  const accessToken = readKiroImportString(source, 'accessToken', 'access_token')
-  const refreshToken = readKiroImportString(source, 'refreshToken', 'refresh_token')
-  if (!refreshToken) {
-    return { error: t('admin.accounts.oauth.kiro.batchImportMissingRefreshToken') }
-  }
-
-  const clientId = readKiroImportString(source, 'clientId', 'client_id')
-  const clientSecret = readKiroImportString(source, 'clientSecret', 'client_secret')
-  const rawProvider = readKiroImportString(source, 'provider', 'idp')
-  const authMethod = normalizeKiroAuthMethod(
-    readKiroImportString(source, 'authMethod', 'auth_method'),
-    rawProvider,
-    clientId,
-    clientSecret
-  )
-
-  const credentials: Record<string, unknown> = {
-    refresh_token: refreshToken,
-    auth_method: authMethod,
-    provider: normalizeKiroProvider(rawProvider, authMethod),
-    region: readKiroImportString(source, 'region') || 'us-east-1'
-  }
-  if (accessToken) credentials.access_token = accessToken
-  if (clientId) credentials.client_id = clientId
-  if (clientSecret) credentials.client_secret = clientSecret
-  const clientIdHash = readKiroImportString(source, 'clientIdHash', 'client_id_hash')
-  if (clientIdHash) credentials.client_id_hash = clientIdHash
-  const profileArn = readKiroImportString(source, 'profileArn', 'profile_arn')
-  if (profileArn) credentials.profile_arn = profileArn
-  const email = readKiroImportString(source, 'email')
-  if (email) credentials.email = email
-  const startUrl = readKiroImportString(source, 'startUrl', 'start_url')
-  if (startUrl) credentials.start_url = startUrl
-  const apiRegion = readKiroImportString(source, 'apiRegion', 'api_region', 'profileRegion', 'profile_region')
-  if (apiRegion) credentials.api_region = apiRegion
-  const expiresAt = normalizeKiroImportExpiresAt(source)
-  if (expiresAt) credentials.expires_at = expiresAt
-
-  const modelMapping = buildModelMappingObject('mapping', [], kiroModelMappings.value)
-  if (modelMapping) {
-    credentials.model_mapping = modelMapping
-  }
-
-  return {
-    account: {
-      name: total > 1 ? `${form.name} #${index + 1}` : form.name,
-      notes: form.notes,
-      platform: 'kiro',
-      type: 'oauth',
-      credentials,
-      proxy_id: form.proxy_id,
-      concurrency: form.concurrency,
-      load_factor: form.load_factor ?? undefined,
-      priority: form.priority,
-      rate_multiplier: form.rate_multiplier,
-      group_ids: form.group_ids,
-      expires_at: form.expires_at,
-      auto_pause_on_expired: autoPauseOnExpired.value
-    }
-  }
-}
-
 const handleKiroExchange = async (authCode: string) => {
   if (!authCode.trim() || !kiroOAuth.sessionId.value) return
 
@@ -6109,6 +6305,8 @@ const handleExchangeCode = async () => {
       return handleKiroExchange(authCode)
     case 'antigravity':
       return handleAntigravityExchange(authCode)
+    case 'windsurf':
+      return handleWindsurfExchange(authCode)
     default:
       return handleAnthropicExchange(authCode)
   }
@@ -6132,63 +6330,46 @@ const handleKiroImport = async () => {
   }
 }
 
-const handleKiroBatchImport = async () => {
-  if (!isKiroBatchImportMode.value || !kiroBatchImportJson.value.trim()) return
-
-  submitting.value = true
-  kiroBatchImportError.value = ''
+const handleWindsurfDirectSubmit = async () => {
+  if (!isWindsurfDirectMode.value) return
+  windsurfOAuthLoading.value = true
+  windsurfOAuthError.value = ''
   try {
-    const raw = JSON.parse(kiroBatchImportJson.value)
-    const items = extractKiroBatchImportItems(raw)
-    const accounts: CreateAccountRequest[] = []
-    const errors: string[] = []
-
-    items.forEach((item, index) => {
-      const result = normalizeKiroBatchImportAccount(item, index, items.length)
-      if (result.account) {
-        accounts.push(result.account)
-      } else {
-        errors.push(`#${index + 1}: ${result.error || t('admin.accounts.oauth.kiro.batchImportInvalidItem')}`)
+    if (windsurfAuthMethod.value === 'password') {
+      if (!windsurfEmail.value.trim() || !windsurfPassword.value.trim()) {
+        appStore.showError(t('admin.accounts.windsurf.pleaseEnterCredentials'))
+        return
       }
-    })
-
-    if (accounts.length === 0) {
-      kiroBatchImportError.value = errors.join('\n') || t('admin.accounts.oauth.kiro.batchImportNoValidAccounts')
-      appStore.showError(t('admin.accounts.oauth.batchFailed'))
-      return
+      const { loginWithPassword } = await import('@/api/admin/windsurf')
+      const creds = await loginWithPassword({
+        name: form.name.trim(),
+        email: windsurfEmail.value.trim(),
+        password: windsurfPassword.value.trim(),
+      })
+      const credentials: Record<string, unknown> = { ...creds }
+      const modelMapping = buildModelMappingObject('mapping', [], windsurfModelMappings.value)
+      if (modelMapping) credentials.model_mapping = modelMapping
+      await createAccountAndFinish('windsurf', 'oauth', credentials)
+    } else if (windsurfAuthMethod.value === 'token') {
+      if (!windsurfToken.value.trim()) {
+        appStore.showError(t('admin.accounts.windsurf.pleaseEnterToken'))
+        return
+      }
+      const { importToken } = await import('@/api/admin/windsurf')
+      const creds = await importToken({
+        name: form.name.trim(),
+        token: windsurfToken.value.trim(),
+      })
+      const credentials: Record<string, unknown> = { ...creds }
+      const modelMapping = buildModelMappingObject('mapping', [], windsurfModelMappings.value)
+      if (modelMapping) credentials.model_mapping = modelMapping
+      await createAccountAndFinish('windsurf', 'oauth', credentials)
     }
-
-    const result = await adminAPI.accounts.batchCreate(accounts)
-    const backendErrors = result.results
-      .map((item, index) => item.success ? '' : `#${index + 1}: ${item.error || t('admin.accounts.oauth.kiro.batchImportCreateFailed')}`)
-      .filter(Boolean)
-    const failedCount = errors.length + result.failed
-    const allErrors = [...errors, ...backendErrors]
-
-    if (result.success > 0 && failedCount === 0) {
-      appStore.showSuccess(
-        accounts.length > 1
-          ? t('admin.accounts.oauth.batchSuccess', { count: result.success })
-          : t('admin.accounts.accountCreated')
-      )
-      emit('created')
-      handleClose()
-    } else if (result.success > 0) {
-      kiroBatchImportError.value = allErrors.join('\n')
-      appStore.showWarning(t('admin.accounts.oauth.batchPartialSuccess', { success: result.success, failed: failedCount }))
-      emit('created')
-    } else {
-      kiroBatchImportError.value = allErrors.join('\n') || t('admin.accounts.oauth.kiro.batchImportNoValidAccounts')
-      appStore.showError(t('admin.accounts.oauth.batchFailed'))
-    }
-  } catch (error: any) {
-    kiroBatchImportError.value =
-      error instanceof SyntaxError
-        ? t('admin.accounts.oauth.kiro.batchImportJsonInvalid')
-        : error.message || t('admin.accounts.oauth.batchFailed')
-    appStore.showError(kiroBatchImportError.value)
+  } catch (e: any) {
+    windsurfOAuthError.value = e?.response?.data?.message || e?.message || 'Windsurf 操作失败'
+    appStore.showError(windsurfOAuthError.value)
   } finally {
-    submitting.value = false
+    windsurfOAuthLoading.value = false
   }
 }
 

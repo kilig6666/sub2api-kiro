@@ -61,6 +61,7 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository) *GatewayHand
 			nil, // claudeTokenProvider
 			nil, // kiroTokenProvider
 			nil, // kiroCooldownStore
+			nil, // windsurfRuntime
 			nil, // sessionLimitCache
 			nil, // rpmCache
 			nil, // digestStore
@@ -69,6 +70,7 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository) *GatewayHand
 			nil, // channelService
 			nil, // resolver
 			nil, // balanceNotifyService
+			nil, // accountUsageService
 		),
 	}
 }

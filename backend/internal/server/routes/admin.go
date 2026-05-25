@@ -44,6 +44,9 @@ func RegisterAdminRoutes(
 		// Kiro OAuth / IDC
 		registerKiroOAuthRoutes(admin, h)
 
+		// Windsurf OAuth
+		registerWindsurfOAuthRoutes(admin, h)
+
 		// 代理管理
 		registerProxyRoutes(admin, h)
 
@@ -374,6 +377,16 @@ func registerKiroOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		kiro.POST("/oauth/exchange-code", h.Admin.KiroOAuth.ExchangeCode)
 		kiro.POST("/oauth/refresh-token", h.Admin.KiroOAuth.RefreshToken)
 		kiro.POST("/oauth/import-token", h.Admin.KiroOAuth.ImportToken)
+	}
+}
+
+func registerWindsurfOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	ws := admin.Group("/windsurf")
+	{
+		ws.POST("/import-api-key", h.Admin.WindsurfOAuth.ImportAPIKey)
+		ws.POST("/login-password", h.Admin.WindsurfOAuth.LoginWithPassword)
+		ws.POST("/import-token", h.Admin.WindsurfOAuth.ImportToken)
+		ws.POST("/oauth/auth-url", h.Admin.WindsurfOAuth.GenerateOAuthURL)
 	}
 }
 

@@ -208,6 +208,12 @@ type SystemSettings struct {
 	// OpenAI 账号调度
 	OpenAIAdvancedSchedulerEnabled bool
 
+	// Windsurf 额度感知调度
+	WindsurfQuotaSchedulingEnabled bool
+	WindsurfQuotaExhaustThreshold  float64
+	WindsurfQuotaMinBalance        int64
+	WindsurfQuotaBucketSize        float64
+
 	// 余额不足提醒
 	BalanceLowNotifyEnabled     bool
 	BalanceLowNotifyThreshold   float64

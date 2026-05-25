@@ -262,6 +262,10 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       settings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         settings.OpenAIAdvancedSchedulerEnabled,
+		WindsurfQuotaSchedulingEnabled:         settings.WindsurfQuotaSchedulingEnabled,
+		WindsurfQuotaExhaustThreshold:          settings.WindsurfQuotaExhaustThreshold,
+		WindsurfQuotaMinBalance:                settings.WindsurfQuotaMinBalance,
+		WindsurfQuotaBucketSize:                settings.WindsurfQuotaBucketSize,
 		BalanceLowNotifyEnabled:                settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            settings.BalanceLowNotifyRechargeURL,
@@ -586,6 +590,12 @@ type UpdateSettingsRequest struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled *bool `json:"openai_advanced_scheduler_enabled"`
+
+	// Windsurf 额度感知调度
+	WindsurfQuotaSchedulingEnabled *bool    `json:"windsurf_quota_scheduling_enabled"`
+	WindsurfQuotaExhaustThreshold  *float64 `json:"windsurf_quota_exhaust_threshold"`
+	WindsurfQuotaMinBalance        *int64   `json:"windsurf_quota_min_balance"`
+	WindsurfQuotaBucketSize        *float64 `json:"windsurf_quota_bucket_size"`
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
@@ -1663,6 +1673,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
+		WindsurfQuotaSchedulingEnabled: func() bool {
+			if req.WindsurfQuotaSchedulingEnabled != nil {
+				return *req.WindsurfQuotaSchedulingEnabled
+			}
+			return previousSettings.WindsurfQuotaSchedulingEnabled
+		}(),
+		WindsurfQuotaExhaustThreshold: func() float64 {
+			if req.WindsurfQuotaExhaustThreshold != nil {
+				return *req.WindsurfQuotaExhaustThreshold
+			}
+			return previousSettings.WindsurfQuotaExhaustThreshold
+		}(),
+		WindsurfQuotaMinBalance: func() int64 {
+			if req.WindsurfQuotaMinBalance != nil {
+				return *req.WindsurfQuotaMinBalance
+			}
+			return previousSettings.WindsurfQuotaMinBalance
+		}(),
+		WindsurfQuotaBucketSize: func() float64 {
+			if req.WindsurfQuotaBucketSize != nil {
+				return *req.WindsurfQuotaBucketSize
+			}
+			return previousSettings.WindsurfQuotaBucketSize
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -2005,6 +2039,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       updatedSettings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		WindsurfQuotaSchedulingEnabled:         updatedSettings.WindsurfQuotaSchedulingEnabled,
+		WindsurfQuotaExhaustThreshold:          updatedSettings.WindsurfQuotaExhaustThreshold,
+		WindsurfQuotaMinBalance:                updatedSettings.WindsurfQuotaMinBalance,
+		WindsurfQuotaBucketSize:                updatedSettings.WindsurfQuotaBucketSize,
 		BalanceLowNotifyEnabled:                updatedSettings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              updatedSettings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            updatedSettings.BalanceLowNotifyRechargeURL,

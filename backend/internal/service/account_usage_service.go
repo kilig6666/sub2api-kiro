@@ -109,6 +109,12 @@ type kiroUsageCache struct {
 	timestamp time.Time
 }
 
+// windsurfUsageCache 缓存 Windsurf 额度快照
+type windsurfUsageCache struct {
+	usageInfo *UsageInfo
+	timestamp time.Time
+}
+
 const (
 	apiCacheTTL             = 3 * time.Minute
 	apiErrorCacheTTL        = 1 * time.Minute        // 负缓存 TTL：429 等错误缓存 1 分钟
@@ -126,9 +132,11 @@ type UsageCache struct {
 	windowStatsCache  sync.Map           // accountID -> *windowStatsCache
 	antigravityCache  sync.Map           // accountID -> *antigravityUsageCache
 	kiroUsageCache    sync.Map           // accountID -> *kiroUsageCache
+	windsurfCache     sync.Map           // accountID -> *windsurfUsageCache
 	apiFlight         singleflight.Group // 防止同一账号的并发请求击穿缓存（Anthropic）
 	antigravityFlight singleflight.Group // 防止同一 Antigravity 账号的并发请求击穿缓存
 	kiroUsageFlight   singleflight.Group // 防止同一 Kiro 账号的并发请求击穿缓存
+	windsurfFlight    singleflight.Group // 防止同一 Windsurf 账号的并发请求击穿缓存
 	openAIProbeCache  sync.Map           // accountID -> time.Time
 }
 
@@ -243,6 +251,15 @@ type UsageInfo struct {
 	KiroRuntimeState     string              `json:"kiro_runtime_state,omitempty"`
 	KiroRuntimeReason    string              `json:"kiro_runtime_reason,omitempty"`
 	KiroRuntimeResetAt   *time.Time          `json:"kiro_runtime_reset_at,omitempty"`
+
+	// Windsurf 配额信息
+	WindsurfPlanName      string         `json:"windsurf_plan_name,omitempty"`
+	WindsurfDaily         *UsageProgress `json:"windsurf_daily,omitempty"`
+	WindsurfWeekly        *UsageProgress `json:"windsurf_weekly,omitempty"`
+	WindsurfBalanceMicros int64          `json:"windsurf_balance_micros,omitempty"`
+	WindsurfFlexCredits   int64          `json:"windsurf_flex_credits,omitempty"`
+	WindsurfPlanStart     string         `json:"windsurf_plan_start,omitempty"`
+	WindsurfPlanEnd       string         `json:"windsurf_plan_end,omitempty"`
 
 	// Antigravity 废弃模型转发规则 (old_model_id -> new_model_id)
 	ModelForwardingRules map[string]string `json:"model_forwarding_rules,omitempty"`
@@ -379,6 +396,11 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, for
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
 		return usage, err
+	}
+
+	// Windsurf 平台：获取日/周配额和余额
+	if account.Platform == PlatformWindsurf {
+		return s.getWindsurfUsage(ctx, account, "active", forceProbe)
 	}
 
 	// 只有oauth类型账号可以通过API获取usage（有profile scope）

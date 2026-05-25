@@ -38,6 +38,7 @@ const (
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformKiro        = domain.PlatformKiro
+	PlatformWindsurf    = domain.PlatformWindsurf
 )
 
 // Account type constants
@@ -423,6 +424,12 @@ const (
 
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
+
+	// Windsurf 额度感知调度
+	SettingKeyWindsurfQuotaSchedulingEnabled = "windsurf_quota_scheduling_enabled" // 全局开关（默认 true）
+	SettingKeyWindsurfQuotaExhaustThreshold  = "windsurf_quota_exhaust_threshold"  // 额度耗尽阈值 %（默认 5）
+	SettingKeyWindsurfQuotaMinBalance        = "windsurf_quota_min_balance"        // 最小可用余额 micros（默认 100000 = $0.10）
+	SettingKeyWindsurfQuotaBucketSize        = "windsurf_quota_bucket_size"        // 额度分桶大小 %（默认 5）
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).

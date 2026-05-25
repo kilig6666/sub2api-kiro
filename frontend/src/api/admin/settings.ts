@@ -567,6 +567,10 @@ export interface UpdateSettingsRequest {
   password_reset_enabled?: boolean;
   frontend_url?: string;
   invitation_code_enabled?: boolean;
+  windsurf_quota_scheduling_enabled?: boolean;
+  windsurf_quota_exhaust_threshold?: number;
+  windsurf_quota_min_balance?: number;
+  windsurf_quota_bucket_size?: number;
   totp_enabled?: boolean; // TOTP 双因素认证
   login_agreement_enabled?: boolean;
   login_agreement_mode?: "modal" | "checkbox" | string;

@@ -1415,7 +1415,6 @@
                       :key="suffix"
                       class="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700 dark:bg-dark-600 dark:text-gray-200"
                     >
-                      <span class="text-gray-400 dark:text-gray-500">@</span>
                       <span>{{ suffix }}</span>
                       <button
                         type="button"
@@ -1436,10 +1435,6 @@
                     <div
                       class="flex min-w-[220px] flex-1 items-center gap-1 rounded border border-transparent px-2 py-1 focus-within:border-primary-300 dark:focus-within:border-primary-700"
                     >
-                      <span
-                        class="font-mono text-sm text-gray-400 dark:text-gray-500"
-                        >@</span
-                      >
                       <input
                         v-model="registrationEmailSuffixWhitelistDraft"
                         type="text"
@@ -3643,6 +3638,95 @@
                   </p>
                 </div>
                 <Toggle v-model="form.openai_advanced_scheduler_enabled" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Windsurf Quota Scheduling -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                Windsurf 额度感知调度
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                基于 Windsurf 账号的每日/每周配额使用率与付费余额，智能过滤耗尽账号并按额度桶排序
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <!-- Enabled -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    启用额度感知调度
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    开启后调度器将跳过配额耗尽的 Windsurf 账号，并优先选择额度充足的账号
+                  </p>
+                </div>
+                <Toggle v-model="form.windsurf_quota_scheduling_enabled" />
+              </div>
+
+              <!-- Exhaust Threshold -->
+              <div v-if="form.windsurf_quota_scheduling_enabled">
+                <label
+                  class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  耗尽阈值 (%)
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  当账号 quotaScore ≤ 此值且无付费余额时视为耗尽（默认 5%）
+                </p>
+                <input
+                  v-model.number="form.windsurf_quota_exhaust_threshold"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  class="input w-32"
+                />
+              </div>
+
+              <!-- Min Balance -->
+              <div v-if="form.windsurf_quota_scheduling_enabled">
+                <label
+                  class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  最小可用余额 (micros)
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  有付费余额 ≥ 此值的账号即使配额耗尽也不会被跳过（100000 = $0.10）
+                </p>
+                <input
+                  v-model.number="form.windsurf_quota_min_balance"
+                  type="number"
+                  min="0"
+                  step="10000"
+                  class="input w-40"
+                />
+              </div>
+
+              <!-- Bucket Size -->
+              <div v-if="form.windsurf_quota_scheduling_enabled">
+                <label
+                  class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  额度分桶大小 (%)
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  同优先级账号按此粒度分桶排序，桶高者优先；桶内按 LRU 轮转（默认 5%）
+                </p>
+                <input
+                  v-model.number="form.windsurf_quota_bucket_size"
+                  type="number"
+                  min="1"
+                  max="50"
+                  step="1"
+                  class="input w-32"
+                />
               </div>
             </div>
           </div>
@@ -6866,6 +6950,10 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
+  windsurf_quota_scheduling_enabled: boolean;
+  windsurf_quota_exhaust_threshold: number;
+  windsurf_quota_min_balance: number;
+  windsurf_quota_bucket_size: number;
 };
 
 const form = reactive<SettingsForm>({
@@ -7052,6 +7140,11 @@ const form = reactive<SettingsForm>({
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
+  // Windsurf 额度感知调度
+  windsurf_quota_scheduling_enabled: true,
+  windsurf_quota_exhaust_threshold: 5,
+  windsurf_quota_min_balance: 100000,
+  windsurf_quota_bucket_size: 5,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -8016,8 +8109,8 @@ async function saveSettings() {
       registration_enabled: form.registration_enabled,
       email_verify_enabled: form.email_verify_enabled,
       registration_email_suffix_whitelist:
-        registrationEmailSuffixWhitelistTags.value.map(
-          (suffix) => `@${suffix}`,
+        registrationEmailSuffixWhitelistTags.value.map((suffix) =>
+          suffix.startsWith("*.") ? suffix : `@${suffix}`,
         ),
       promo_code_enabled: form.promo_code_enabled,
       invitation_code_enabled: form.invitation_code_enabled,
@@ -8200,6 +8293,23 @@ async function saveSettings() {
         form.payment_cancel_rate_limit_window_mode,
       payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
       openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
+      // Windsurf 额度感知调度
+      windsurf_quota_scheduling_enabled: form.windsurf_quota_scheduling_enabled,
+      windsurf_quota_exhaust_threshold: Number.isFinite(
+        Number(form.windsurf_quota_exhaust_threshold),
+      )
+        ? Number(form.windsurf_quota_exhaust_threshold)
+        : 5,
+      windsurf_quota_min_balance: Number.isFinite(
+        Number(form.windsurf_quota_min_balance),
+      )
+        ? Number(form.windsurf_quota_min_balance)
+        : 100000,
+      windsurf_quota_bucket_size: Number.isFinite(
+        Number(form.windsurf_quota_bucket_size),
+      )
+        ? Number(form.windsurf_quota_bucket_size)
+        : 5,
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

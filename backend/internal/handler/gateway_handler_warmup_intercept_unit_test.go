@@ -166,6 +166,7 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // claudeTokenProvider
 		nil, // kiroTokenProvider
 		nil, // kiroCooldownStore
+		nil, // windsurfRuntime
 		nil, // sessionLimitCache
 		nil, // rpmCache
 		nil, // digestStore
@@ -174,6 +175,7 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // channelService
 		nil, // resolver
 		nil, // balanceNotifyService
+		nil, // accountUsageService
 	)
 
 	// RunModeSimple：跳过计费检查，避免引入 repo/cache 依赖。

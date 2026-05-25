@@ -196,6 +196,12 @@ type SystemSettings struct {
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled bool `json:"openai_advanced_scheduler_enabled"`
 
+	// Windsurf 额度感知调度
+	WindsurfQuotaSchedulingEnabled bool    `json:"windsurf_quota_scheduling_enabled"`
+	WindsurfQuotaExhaustThreshold  float64 `json:"windsurf_quota_exhaust_threshold"`
+	WindsurfQuotaMinBalance        int64   `json:"windsurf_quota_min_balance"`
+	WindsurfQuotaBucketSize        float64 `json:"windsurf_quota_bucket_size"`
+
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`
 	PaymentMinAmount                 float64  `json:"payment_min_amount"`

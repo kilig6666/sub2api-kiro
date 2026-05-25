@@ -26,6 +26,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	windsurfpkg "github.com/Wei-Shaw/sub2api/internal/pkg/windsurf"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -1973,6 +1974,18 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle Windsurf accounts
+	if account.Platform == service.PlatformWindsurf {
+		mapping := account.GetModelMapping()
+		if len(mapping) == 0 {
+			response.Success(c, windsurfpkg.DefaultModels)
+			return
+		}
+
+		response.Success(c, buildMappedWindsurfModels(mapping))
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2027,6 +2040,28 @@ func buildMappedKiroModels(mapping map[string]string) []kiropkg.Model {
 		}
 		if !found {
 			models = append(models, kiropkg.Model{
+				ID:          requestedModel,
+				Type:        "model",
+				DisplayName: requestedModel,
+			})
+		}
+	}
+	return models
+}
+
+func buildMappedWindsurfModels(mapping map[string]string) []windsurfpkg.Model {
+	models := make([]windsurfpkg.Model, 0, len(mapping))
+	for requestedModel := range mapping {
+		var found bool
+		for _, dm := range windsurfpkg.DefaultModels {
+			if dm.ID == requestedModel {
+				models = append(models, dm)
+				found = true
+				break
+			}
+		}
+		if !found {
+			models = append(models, windsurfpkg.Model{
 				ID:          requestedModel,
 				Type:        "model",
 				DisplayName: requestedModel,

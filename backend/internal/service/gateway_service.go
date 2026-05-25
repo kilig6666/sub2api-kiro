@@ -564,6 +564,7 @@ type GatewayService struct {
 	concurrencyService    *ConcurrencyService
 	claudeTokenProvider   *ClaudeTokenProvider
 	kiroTokenProvider     *KiroTokenProvider
+	windsurfRuntime       *WindsurfRuntime
 	kiroCooldownStore     KiroCooldownStore
 	sessionLimitCache     SessionLimitCache // 会话数量限制缓存（仅 Anthropic OAuth/SetupToken）
 	rpmCache              RPMCache          // RPM 计数缓存（仅 Anthropic OAuth/SetupToken）
@@ -581,6 +582,7 @@ type GatewayService struct {
 	debugGatewayBodyFile  atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
+	accountUsageService   *AccountUsageService
 }
 
 // NewGatewayService creates a new GatewayService
@@ -605,6 +607,7 @@ func NewGatewayService(
 	claudeTokenProvider *ClaudeTokenProvider,
 	kiroTokenProvider *KiroTokenProvider,
 	kiroCooldownStore KiroCooldownStore,
+	windsurfRuntime *WindsurfRuntime,
 	sessionLimitCache SessionLimitCache,
 	rpmCache RPMCache,
 	digestStore *DigestSessionStore,
@@ -613,6 +616,7 @@ func NewGatewayService(
 	channelService *ChannelService,
 	resolver *ModelPricingResolver,
 	balanceNotifyService *BalanceNotifyService,
+	accountUsageService *AccountUsageService,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
@@ -639,6 +643,7 @@ func NewGatewayService(
 		claudeTokenProvider:  claudeTokenProvider,
 		kiroTokenProvider:    kiroTokenProvider,
 		kiroCooldownStore:    kiroCooldownStore,
+		windsurfRuntime:      windsurfRuntime,
 		sessionLimitCache:    sessionLimitCache,
 		rpmCache:             rpmCache,
 		userGroupRateCache:   gocache.New(userGroupRateTTL, time.Minute),
@@ -650,6 +655,7 @@ func NewGatewayService(
 		channelService:       channelService,
 		resolver:             resolver,
 		balanceNotifyService: balanceNotifyService,
+		accountUsageService:  accountUsageService,
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
@@ -3268,6 +3274,8 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 	// 批量预取窗口费用+RPM 计数，避免逐个账号查询（N+1）
 	ctx = s.withWindowCostPrefetch(ctx, accounts)
 	ctx = s.withRPMPrefetch(ctx, accounts)
+	// Windsurf 额度预取
+	ctx = s.withWindsurfQuotaPrefetch(ctx, accounts, platform)
 
 	// 3. 按优先级+最久未用选择（考虑模型支持）
 	// needsUpstreamCheck 仅在主选择循环中使用；粘性会话命中时跳过此检查，
@@ -3308,6 +3316,10 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 			continue
 		}
+		// Windsurf 额度耗尽过滤：score <= exhaustThreshold 且无付费余额 → 跳过
+		if s.isWindsurfAccountExhausted(ctx, acc) {
+			continue
+		}
 		if selected == nil {
 			selected = acc
 			continue
@@ -3315,18 +3327,23 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		if acc.Priority < selected.Priority {
 			selected = acc
 		} else if acc.Priority == selected.Priority {
-			switch {
-			case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
+			// Windsurf 额度感知排序：同优先级内按 quotaScore 5% 桶分组，桶高者优先
+			if s.compareWindsurfQuotaScore(ctx, acc, selected) {
 				selected = acc
-			case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
-				// keep selected (never used is preferred)
-			case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
-				if preferOAuth && acc.Type != selected.Type && acc.Type == AccountTypeOAuth {
+			} else {
+				switch {
+				case acc.LastUsedAt == nil && selected.LastUsedAt != nil:
 					selected = acc
-				}
-			default:
-				if acc.LastUsedAt.Before(*selected.LastUsedAt) {
-					selected = acc
+				case acc.LastUsedAt != nil && selected.LastUsedAt == nil:
+					// keep selected (never used is preferred)
+				case acc.LastUsedAt == nil && selected.LastUsedAt == nil:
+					if preferOAuth && acc.Type != selected.Type && acc.Type == AccountTypeOAuth {
+						selected = acc
+					}
+				default:
+					if acc.LastUsedAt.Before(*selected.LastUsedAt) {
+						selected = acc
+					}
 				}
 			}
 		}
@@ -3897,6 +3914,13 @@ func (s *GatewayService) getOAuthToken(ctx context.Context, account *Account) (s
 			return "", "", err
 		}
 		return accessToken, "oauth", nil
+	}
+	if account.Platform == PlatformWindsurf {
+		apiKey := account.GetCredential("api_key")
+		if apiKey == "" {
+			return "", "", errors.New("windsurf account missing api_key credential")
+		}
+		return apiKey, "apikey", nil
 	}
 
 	// 其他情况（Gemini 有自己的 TokenProvider，setup-token 类型等）直接从账号读取
@@ -4469,15 +4493,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	// Web Search 模拟：纯 web_search 请求时，直接调用搜索 API 构造响应。
 	// Kiro OAuth 在 forwardKiroMessages 内部完成模型映射后再判断，避免使用未映射的请求体。
-	if account != nil && !(account.Platform == PlatformKiro && account.Type == AccountTypeOAuth) && s.shouldEmulateWebSearch(ctx, account, parsed.GroupID, parsed.Body) {
+	if account != nil && (account.Platform != PlatformKiro || account.Type != AccountTypeOAuth) && s.shouldEmulateWebSearch(ctx, account, parsed.GroupID, parsed.Body) {
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
-	}
-
-	// Bedrock CC 兼容：在转发之前对请求体做 CC 兼容处理。
-	// 只修改 body 内容（thinking 类型、tool_use ID），不影响后续的透传/Bedrock 转发路径。
-	if account != nil && s.isBedrockCCCompatEnabled(ctx, account, parsed.GroupID) {
-		parsed.Body = sanitizeBedrockThinking(parsed.Body, parsed.Model)
-		parsed.Body = sanitizeBedrockToolUseIDs(parsed.Body)
 	}
 
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
@@ -4505,6 +4522,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	if account != nil && account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
 		return s.forwardKiroMessages(ctx, c, account, parsed, startTime)
+	}
+
+	if account != nil && account.Platform == PlatformWindsurf {
+		return s.forwardWindsurfMessages(ctx, c, account, parsed, startTime)
 	}
 
 	// Beta policy: evaluate once; block check + cache filter set for buildUpstreamRequest.
@@ -5778,6 +5799,19 @@ func writeAnthropicPassthroughResponseHeaders(dst http.Header, src http.Header, 
 	if v := strings.TrimSpace(src.Get("x-request-id")); v != "" {
 		dst.Set("x-request-id", v)
 	}
+}
+
+// ApplyBedrockCCCompat 应用 Bedrock CC 兼容转换（渠道级模型映射后调用）
+// 清理 Anthropic API 专有字段、注入 Bedrock 必需字段、修复 thinking/tool_use ID
+func (s *GatewayService) ApplyBedrockCCCompat(ctx context.Context, body []byte, model string, account *Account, groupID *int64) []byte {
+	if !s.isBedrockCCCompatEnabled(ctx, account, groupID) {
+		return body
+	}
+	body = sanitizeBedrockCCFields(body)
+	body = sanitizeBedrockThinking(body, model)
+	body = sanitizeBedrockToolUseIDs(body)
+	body = sanitizeBedrockCCBetaTokens(body, model)
+	return body
 }
 
 // isBedrockCCCompatEnabled 检查渠道是否启用了 Bedrock CC 兼容模式
@@ -7487,7 +7521,6 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	}
 
 	needModelReplace := originalModel != mappedModel
-	isKiroStream := account != nil && account.Platform == PlatformKiro
 	clientDisconnected := false // 客户端断开标志，断开后继续读取上游以获取完整usage
 	sawTerminalEvent := false
 
@@ -7624,24 +7657,6 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			if !ok {
 				// 上游完成，返回结果
 				if !sawTerminalEvent {
-					if isKiroStream {
-						msg := "upstream stream ended before a terminal event"
-						if !c.Writer.Written() {
-							body, _ := json.Marshal(map[string]any{
-								"type": "error",
-								"error": map[string]string{
-									"type":    "stream_incomplete",
-									"message": msg,
-								},
-							})
-							return nil, &UpstreamFailoverError{
-								StatusCode:             http.StatusBadGateway,
-								ResponseBody:           body,
-								RetryableOnSameAccount: true,
-							}
-						}
-						sendErrorEvent("stream_incomplete", msg)
-					}
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
 				}
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
@@ -7702,35 +7717,6 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				if err != nil {
 					if clientDisconnected {
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
-					}
-					if isKiroStream {
-						if !c.Writer.Written() {
-							body := []byte(data)
-							if len(body) == 0 || !json.Valid(body) {
-								body, _ = json.Marshal(map[string]any{
-									"type": "error",
-									"error": map[string]string{
-										"type":    "stream_error",
-										"message": sanitizeStreamError(err),
-									},
-								})
-							}
-							return nil, &UpstreamFailoverError{
-								StatusCode:             http.StatusBadGateway,
-								ResponseBody:           body,
-								RetryableOnSameAccount: true,
-							}
-						}
-						if data != "" && json.Valid([]byte(data)) {
-							if _, werr := fmt.Fprintf(w, "event: error\ndata: %s\n\n", data); werr != nil {
-								clientDisconnected = true
-								return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
-							}
-							flusher.Flush()
-						} else {
-							sendErrorEvent("stream_error", sanitizeStreamError(err))
-						}
-						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
 					}
 					return nil, err
 				}
@@ -9158,7 +9144,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return nil
 	}
 	if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
-		c.JSON(http.StatusOK, gin.H{"input_tokens": estimateKiroInputTokens(body)})
+		s.countTokensError(c, http.StatusNotFound, "not_found_error", "Token counting is not supported for this platform")
 		return nil
 	}
 

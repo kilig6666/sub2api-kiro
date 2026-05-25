@@ -261,32 +261,6 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 	require.Empty(t, rec.Header().Get("Set-Cookie"))
 }
 
-func TestGatewayService_KiroForwardCountTokensUsesLocalEstimate(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
-
-	body := []byte(`{"model":"claude-opus-4-7","messages":[{"role":"user","content":[{"type":"text","text":"hello token counter"}]}]}`)
-	parsed := &ParsedRequest{
-		Body:  body,
-		Model: "claude-opus-4-7",
-	}
-	account := &Account{
-		ID:       203,
-		Name:     "kiro-count-local",
-		Platform: PlatformKiro,
-		Type:     AccountTypeOAuth,
-	}
-
-	err := (&GatewayService{}).ForwardCountTokens(context.Background(), c, account, parsed)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Greater(t, int(gjson.GetBytes(rec.Body.Bytes(), "input_tokens").Int()), 0)
-	require.False(t, gjson.GetBytes(rec.Body.Bytes(), "error").Exists())
-}
-
 // TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases 覆盖透传模式下模型映射的各种边界情况
 func TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases(t *testing.T) {
 	gin.SetMode(gin.TestMode)

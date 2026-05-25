@@ -131,11 +131,12 @@ docs/*
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
-!docs/kiro-analysis.md
 .serena/
 .codex/
 frontend/coverage/
 aicodex
 output/
 .ace-tool/
+deploy/language_server_linux_x64
+language_server_linux_x64
 deploy-to-server.sh
